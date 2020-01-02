@@ -207,7 +207,7 @@ mod test_matcher {
 
     #[test]
     fn test_location_regex() {
-        let matcher = LocationMatcher::new(r"~/test/\.*");
+        let matcher = LocationMatcher::new(r"~/test/.*");
         assert!(matcher.is_match("/test/a"));
         assert!(matcher.is_match("/test/a/b"));
     }
@@ -270,4 +270,7 @@ mod test_matcher {
         assert!(matcher.is_match("example.com"));
         assert!(!matcher.is_match("test.example.com"));
     }
+
+    #[test]
+    fn test_host_multiple() {}
 }

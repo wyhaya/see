@@ -15,7 +15,7 @@ pub const PID_PATH: [&str; 2] = [".see", "pid"];
 
 pub const CONFIG_PATH: [&str; 2] = [".see", "config.yml"];
 
-// Global default config
+// Server config
 
 pub const ALLOW_METHODS: [Method; 2] = [Method::GET, Method::HEAD];
 
@@ -24,6 +24,8 @@ pub const COMPRESS_LEVEL: u32 = 3;
 pub const COMPRESS_EXTENSIONS: [&str; 5] = ["html", "css", "js", "json", "xml"];
 
 pub const INDEX: [&str; 2] = ["index.html", "index.htm"];
+
+pub const TIME_FORMAT: &str = "%Y-%m-%d %H:%M";
 
 pub const BUF_SIZE: usize = 2 * 1024;
 
@@ -48,7 +50,7 @@ pub fn quick_start_config(root: PathBuf, addr: SocketAddr) -> ServerConfig {
             file: Setting::None,
             index: Setting::None,
             directory: Setting::Value(Directory {
-                time: true,
+                time: Some(TIME_FORMAT.to_string()),
                 size: true,
             }),
             headers: Setting::None,

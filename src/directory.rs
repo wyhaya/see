@@ -1,7 +1,8 @@
 use crate::config::Directory;
-use chrono::{DateTime, Local};
 use futures::StreamExt;
 use std::path::PathBuf;
+use std::time::UNIX_EPOCH;
+use time::Timespec;
 use tokio::fs;
 use tokio::io::Result;
 
@@ -48,15 +49,15 @@ const TEMPLATE: &str = r#"<!DOCTYPE html>
 </html>
 "#;
 
-pub async fn render_dir_html(path: &PathBuf, title: &str, option: &Directory) -> Result<String> {
+pub async fn render_dir_html(path: &PathBuf, title: &str, config: &Directory) -> Result<String> {
     let mut dir = fs::read_dir(path).await?;
 
     let (mut columns, mut column) = ("auto auto 1fr", "1 / 4");
 
-    if !option.time && !option.size {
+    if config.time.is_none() && !config.size {
         columns = "auto";
         column = "1 / 2";
-    } else if (!option.time && option.size) || (option.time && !option.size) {
+    } else if (config.time.is_none() && config.size) || (config.time.is_some() && !config.size) {
         columns = "auto 1fr";
         column = "1 / 3";
     }
@@ -85,18 +86,20 @@ pub async fn render_dir_html(path: &PathBuf, title: &str, option: &Directory) ->
             None => continue,
         };
 
-        if option.size || option.time {
+        if config.time.is_some() || config.size {
             let meta = fs::metadata(&entry).await?;
 
-            if option.time {
-                let datetime: DateTime<Local> = DateTime::from(meta.modified()?);
+            if let Some(format) = &config.time {
+                let dur = meta.modified()?.duration_since(UNIX_EPOCH).unwrap();
+                let spec = Timespec::new(dur.as_secs() as i64, dur.subsec_nanos() as i32);
+
                 content.push_str(&format!(
                     "<time>{}</time>",
-                    datetime.format("%Y-%m-%d %H:%M")
+                    time::at(spec).strftime(format).unwrap()
                 ));
             }
 
-            if option.size {
+            if config.size {
                 if entry.is_file() {
                     content.push_str(&format!(
                         "<span>{}</span>",

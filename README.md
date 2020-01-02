@@ -168,11 +168,16 @@ index:
 File list option
 
 ```yaml
-directory: true
-# or
+# Show directory only
+directory: true | false | [option]
+
+# Display creation time
 directory:
-  time: true  # Display creation time
-  size: true  # Display file size
+  time: true | false | "%Y-%m-%d %H:%M"
+
+# Display file size
+directory:
+  size: true | false
 ```
 
 ### header
@@ -301,9 +306,6 @@ ${VAR}
 echo: Hello ${request_path}, ${request_header_host}
 ```
 
-* `${request_scheme}`
-* `${request_host}`
-* `${request_port}`
 * `${request_path}`
 * `${request_query}`
 * `${request_uri}`

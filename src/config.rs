@@ -41,6 +41,12 @@ impl<T> Setting<T> {
     }
 }
 
+impl<T> Default for Setting<T> {
+    fn default() -> Self {
+        Setting::None
+    }
+}
+
 impl<T: Default> Setting<T> {
     pub fn unwrap_or_default(self) -> T {
         match self {
@@ -102,7 +108,7 @@ pub struct TLSConfig {
 
 #[derive(Debug, Clone)]
 pub struct Directory {
-    pub time: bool,
+    pub time: Option<String>,
     pub size: bool,
 }
 
@@ -232,23 +238,12 @@ impl ContentEncoding {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct StatusPage {
     pub _403: Setting<PathBuf>,
     pub _404: Setting<PathBuf>,
     pub _500: Setting<PathBuf>,
     pub _502: Setting<PathBuf>,
-}
-
-impl Default for StatusPage {
-    fn default() -> Self {
-        StatusPage {
-            _403: Setting::None,
-            _404: Setting::None,
-            _500: Setting::None,
-            _502: Setting::None,
-        }
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -312,27 +307,28 @@ pub trait ForceTo {
     fn to_regex(&self) -> Regex;
     fn to_socket_addr(&self) -> SocketAddr;
     fn to_uri(&self) -> Uri;
+    fn to_strftime(&self);
 }
 
 impl ForceTo for &str {
     fn to_glob(&self) -> Glob {
         Glob::new(self)
-            .unwrap_or_else(|err| exit!("Cannot resolve `{}` to glob matcher\n{}", self, err))
+            .unwrap_or_else(|err| exit!("Cannot parse `{}` to glob matcher\n{}", self, err))
     }
 
     fn to_header_name(&self) -> HeaderName {
         HeaderName::from_str(self)
-            .unwrap_or_else(|err| exit!("Cannot resolve `{}` to http header name\n{}", self, err))
+            .unwrap_or_else(|err| exit!("Cannot parse `{}` to http header name\n{}", self, err))
     }
 
     fn to_header_value(&self) -> HeaderValue {
         HeaderValue::from_str(self)
-            .unwrap_or_else(|err| exit!("Cannot resolve `{}` to http header value\n{}", self, err))
+            .unwrap_or_else(|err| exit!("Cannot parse `{}` to http header value\n{}", self, err))
     }
 
     fn to_method(&self) -> Method {
         Method::from_str(self)
-            .unwrap_or_else(|err| exit!("Cannot resolve `{}` to http method\n{}", self, err))
+            .unwrap_or_else(|err| exit!("Cannot parse `{}` to http method\n{}", self, err))
     }
 
     fn to_regex(&self) -> Regex {
@@ -356,34 +352,28 @@ impl ForceTo for &str {
         self.parse::<Uri>()
             .unwrap_or_else(|err| exit!("Cannot parse `{}` to http uri\n{}", self, err))
     }
-}
 
-pub trait ToAbsolutePath {
-    fn to_absolute_path<P: AsRef<Path>>(&self, root: P) -> PathBuf;
-}
-
-impl ToAbsolutePath for String {
-    fn to_absolute_path<P: AsRef<Path>>(&self, root: P) -> PathBuf {
-        let path = PathBuf::from(self);
-        if path.is_absolute() {
-            path
-        } else {
-            root.as_ref().join(self)
-        }
+    fn to_strftime(&self) {
+        time::now()
+            .strftime(self)
+            .unwrap_or_else(|err| exit!("Cannot parse `{}` to time format\n{}", self, err));
     }
 }
 
 trait YamlExtend {
     fn check(&self, name: &str, keys: &[&str], must: &[&str]);
-    fn to_bool<T: Display>(&self, msg: T) -> bool;
+    fn try_to_string(&self) -> Option<String>;
     fn to_string<T: Display>(&self, msg: T) -> String;
+    fn key_to_bool(&self, key: &str) -> bool;
+    fn key_to_number(&self, key: &str) -> u64;
+    fn key_to_string(&self, key: &str) -> String;
 }
 
 impl YamlExtend for Yaml {
     fn check(&self, name: &str, keys: &[&str], must: &[&str]) {
         let hash = self[name]
             .as_hash()
-            .unwrap_or_else(|| exit!("Cannot resolve `{}` to hash", name));
+            .unwrap_or_else(|| exit!("Cannot parse `{}` to hash", name));
 
         // Disallowed key
         for (key, _) in hash {
@@ -403,31 +393,72 @@ impl YamlExtend for Yaml {
         }
     }
 
-    fn to_bool<T: Display>(&self, msg: T) -> bool {
-        self.as_bool().unwrap_or_else(|| {
+    fn try_to_string(&self) -> Option<String> {
+        if let Some(s) = self.as_str() {
+            return Some(s.to_string());
+        }
+        if let Some(s) = self.as_i64() {
+            return Some(s.to_string());
+        }
+        if let Some(s) = self.as_f64() {
+            return Some(s.to_string());
+        }
+        None
+    }
+
+    fn to_string<T: Display>(&self, msg: T) -> String {
+        self.try_to_string().unwrap_or_else(|| {
             exit!(
-                "Cannot resolve `{}` to boolean, It should be 'boolean', but found:\n{:#?}",
+                "Cannot parse `{}`, It should be 'string', but found:\n{:#?}",
                 msg,
                 self
             )
         })
     }
 
-    fn to_string<T: Display>(&self, msg: T) -> String {
-        if let Some(s) = self.as_str() {
-            return s.to_string();
+    fn key_to_bool(&self, key: &str) -> bool {
+        self.as_bool().unwrap_or_else(|| {
+            exit!(
+                "Cannot parse `{}`, It should be 'boolean', but found:\n{:#?}",
+                key,
+                self[key]
+            )
+        })
+    }
+
+    fn key_to_number(&self, key: &str) -> u64 {
+        self[key].as_i64().map(|n| n as u64).unwrap_or_else(|| {
+            exit!(
+                "Cannot parse `{}`, It should be 'number', but found:\n{:#?}",
+                key,
+                self[key]
+            )
+        })
+    }
+
+    fn key_to_string(&self, key: &str) -> String {
+        self[key].try_to_string().unwrap_or_else(|| {
+            exit!(
+                "Cannot parse `{}`, It should be 'string', but found:\n{:#?}",
+                key,
+                self[key]
+            )
+        })
+    }
+}
+
+pub trait ToAbsolutePath {
+    fn to_absolute_path<P: AsRef<Path>>(&self, root: P) -> PathBuf;
+}
+
+impl ToAbsolutePath for String {
+    fn to_absolute_path<P: AsRef<Path>>(&self, root: P) -> PathBuf {
+        let path = PathBuf::from(self);
+        if path.is_absolute() {
+            path
+        } else {
+            root.as_ref().join(self)
         }
-        if let Some(s) = self.as_i64() {
-            return s.to_string();
-        }
-        if let Some(s) = self.as_f64() {
-            return s.to_string();
-        }
-        exit!(
-            "Cannot resolve `{}` to string, It should be 'string', but found:\n{:#?}",
-            msg,
-            self
-        )
     }
 }
 
@@ -444,12 +475,12 @@ impl ServerConfig {
             .unwrap_or_else(|err| exit!("Parsing config file failed\n{:?}", err));
 
         if docs.is_empty() {
-            exit!("Cannot resolve `server` to array")
+            exit!("Cannot parse `server` to array")
         }
 
         let servers = docs[0]
             .as_vec()
-            .unwrap_or_else(|| exit!("Cannot resolve `server` to array"));
+            .unwrap_or_else(|| exit!("Cannot parse `server` to array"));
 
         let mut configs: Vec<ServerConfig> = vec![];
 
@@ -515,6 +546,7 @@ impl ServerConfig {
                 }
             }
         }
+
         configs
     }
 }
@@ -524,16 +556,16 @@ struct Parser {
 }
 
 impl Parser {
-    fn new(yaml: Yaml) -> Parser {
+    fn new(yaml: Yaml) -> Self {
         Parser { yaml }
     }
 
     fn listen(&self) -> Vec<SocketAddr> {
-        let s = self.yaml["listen"].to_string("listen");
+        let raw = self.yaml.key_to_string("listen");
         let mut listen = vec![];
 
-        for item in s.split_whitespace() {
-            listen.push(item.to_socket_addr());
+        for s in raw.split_whitespace() {
+            listen.push(s.to_socket_addr());
         }
 
         listen
@@ -546,9 +578,7 @@ impl Parser {
         self.yaml.check("https", &["cert", "key"], &["cert", "key"]);
 
         let certs = {
-            let p = https["cert"]
-                .to_string("https cert")
-                .to_absolute_path(parent);
+            let p = https.key_to_string("cert").to_absolute_path(parent);
 
             let file = fs::File::open(&p)
                 .unwrap_or_else(|err| exit!("Cannot open file: {}\n{:?}", p.display(), err));
@@ -558,7 +588,7 @@ impl Parser {
         };
 
         let mut keys = {
-            let p = https["key"].to_string("https key").to_absolute_path(parent);
+            let p = https.key_to_string("key").to_absolute_path(parent);
 
             let file = fs::File::open(&p)
                 .unwrap_or_else(|err| exit!("Cannot open file: {}\n{:?}", p.display(), err));
@@ -578,19 +608,19 @@ impl Parser {
     }
 
     fn root(&self, parent: &Path) -> PathBuf {
-        let s = self.yaml["root"].to_string("root");
+        let s = self.yaml.key_to_string("root");
         s.to_absolute_path(parent)
     }
 
     fn echo(&self) -> Setting<Var<String>> {
         setting_value!(self.yaml["echo"]);
-        let s = self.yaml["echo"].to_string("echo");
+        let s = self.yaml.key_to_string("echo");
         Setting::Value(s.to_var())
     }
 
     fn file(&self, root: &PathBuf) -> Setting<PathBuf> {
         setting_value!(self.yaml["file"]);
-        let s = self.yaml["file"].to_string("file");
+        let s = self.yaml.key_to_string("file");
         Setting::Value(s.to_absolute_path(root))
     }
 
@@ -613,26 +643,34 @@ impl Parser {
         setting_value!(directory);
 
         // directory: true
-        if let Some(_) = directory.as_bool() {
+        if directory.as_bool().is_some() {
             return Setting::Value(Directory {
-                time: false,
+                time: None,
                 size: false,
             });
         }
 
         self.yaml.check("directory", &["time", "size"], &[]);
 
-        let time = is_none!(
-            directory["time"],
-            false,
-            directory["time"].to_bool("directory time")
-        );
+        let time = is_none!(directory["time"], None, {
+            match directory["time"].as_bool() {
+                Some(b) => {
+                    if b {
+                        Some(default::TIME_FORMAT.to_string())
+                    } else {
+                        None
+                    }
+                }
+                None => {
+                    let format = directory.key_to_string("time");
+                    // check
+                    format.as_str().to_strftime();
+                    Some(format)
+                }
+            }
+        });
 
-        let size = is_none!(
-            directory["size"],
-            false,
-            directory["size"].to_bool("directory size")
-        );
+        let size = is_none!(directory["size"], false, directory.key_to_bool("size"));
 
         Setting::Value(Directory { time, size })
     }
@@ -659,7 +697,7 @@ impl Parser {
 
     fn rewrite(&self) -> Setting<Rewrite> {
         setting_value!(self.yaml["rewrite"]);
-        let s = self.yaml["rewrite"].to_string("rewrite");
+        let s = self.yaml.key_to_string("rewrite");
 
         Setting::Value(Rewrite::parse(s))
     }
@@ -685,19 +723,17 @@ impl Parser {
         let level = is_none!(
             compress["level"],
             default::COMPRESS_LEVEL,
-            match compress["level"].as_i64() {
-                Some(level) => {
-                    if level > 9 || level < 0 {
-                        exit!("Compress level should be an integer between 0-9")
-                    }
-                    level as u32
+            {
+                let level = compress.key_to_number("level");
+                if level > 9 || level < 0 {
+                    exit!("Compress level should be an integer between 0-9")
                 }
-                None => exit!("Cannot resolve `compress level` to number"),
+                level as u32
             }
         );
 
         let mode = is_none!(compress["mode"], ContentEncoding::Auto(level), {
-            let mode = compress["mode"].to_string("compress 'mode'");
+            let mode = compress.key_to_string("mode");
             ContentEncoding::from(&mode, level)
         });
 
@@ -743,9 +779,11 @@ impl Parser {
         self.yaml
             .check("auth", &["user", "password"], &["user", "password"]);
 
-        let user = auth["user"].to_string("auth 'user'");
-        let password = auth["password"].to_string("auth 'password'");
-        let s = format!("{}:{}", user, password);
+        let s = format!(
+            "{}:{}",
+            auth.key_to_string("user"),
+            auth.key_to_string("password")
+        );
         Setting::Value(format!("Basic {}", encode(&s)))
     }
 
@@ -782,20 +820,13 @@ impl Parser {
             .map(|u| u.clone().to_var().map_none(|s| s.as_str().to_uri()))
             .collect::<Vec<Var<Uri>>>();
 
-        let method = is_none!(
-            proxy["method"],
-            None,
-            Some(proxy["method"].to_string("proxy 'method'"))
-        )
-        .map(|m| m.as_str().to_method());
+        let method = is_none!(proxy["method"], None, Some(proxy.key_to_string("method")))
+            .map(|m| m.as_str().to_method());
 
         let timeout = is_none!(
             proxy["timeout"],
-            Duration::from_millis(default::PROXY_TIMEOUT),
-            match proxy["timeout"].as_i64() {
-                Some(timeout) => Duration::from_millis(timeout as u64),
-                None => exit!("Cannot resolve `proxy timeout` to number"),
-            }
+            default::PROXY_TIMEOUT,
+            proxy.key_to_number("timeout")
         );
 
         let headers = Parser::new(self.yaml.clone()).headers();
@@ -803,7 +834,7 @@ impl Parser {
         Setting::Value(Proxy {
             uri,
             method,
-            timeout,
+            timeout: Duration::from_millis(timeout),
             headers,
         })
     }
@@ -828,7 +859,7 @@ impl Parser {
 
         let hash = match self.yaml["location"].as_hash() {
             Some(d) => d,
-            None => exit!("Cannot resolve `location` to hash"),
+            None => exit!("Cannot parse `location` to hash"),
         };
         let mut vec = vec![];
 
@@ -858,7 +889,7 @@ impl Parser {
 
             let parser = Parser::new(server.clone());
             if let None = parser.yaml.as_hash() {
-                exit!("Cannot resolve `location {}` to hash", route)
+                exit!("Cannot parse `location {}` to hash", route)
             }
 
             let lr = parser.location_root();
@@ -891,11 +922,11 @@ impl Parser {
 
     fn location_break(&self) -> bool {
         is_none!(self.yaml["break"], return false);
-        self.yaml["break"].to_bool("location break")
+        self.yaml.key_to_bool("break")
     }
 
     fn location_root(&self) -> Option<String> {
         is_none!(self.yaml["root"], return None);
-        Some(self.yaml["root"].to_string("location 'root'"))
+        Some(self.yaml.key_to_string("root"))
     }
 }
