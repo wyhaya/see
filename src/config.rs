@@ -16,6 +16,7 @@ use std::time::Duration;
 use tokio_rustls::rustls::internal::pemfile::{certs, rsa_private_keys};
 use tokio_rustls::rustls::{NoClientAuth, ServerConfig as Config};
 use tokio_rustls::TlsAcceptor;
+use yaml_rust::yaml::Hash;
 use yaml_rust::{Yaml, YamlLoader};
 
 #[derive(Debug, Clone)]
@@ -365,15 +366,15 @@ trait YamlExtend {
     fn try_to_string(&self) -> Option<String>;
     fn to_string<T: Display>(&self, msg: T) -> String;
     fn key_to_bool(&self, key: &str) -> bool;
+    fn key_to_hash(&self, key: &str) -> &Hash;
     fn key_to_number(&self, key: &str) -> u64;
     fn key_to_string(&self, key: &str) -> String;
+    fn key_to_multiple_string(&self, key: &str) -> Vec<String>;
 }
 
 impl YamlExtend for Yaml {
     fn check(&self, name: &str, keys: &[&str], must: &[&str]) {
-        let hash = self[name]
-            .as_hash()
-            .unwrap_or_else(|| exit!("Cannot parse `{}` to hash", name));
+        let hash = self.key_to_hash(name);
 
         // Disallowed key
         for (key, _) in hash {
@@ -426,6 +427,16 @@ impl YamlExtend for Yaml {
         })
     }
 
+    fn key_to_hash(&self, key: &str) -> &Hash {
+        self[key].as_hash().unwrap_or_else(|| {
+            exit!(
+                "Cannot parse `{}`, It should be 'hash', but found:\n{:#?}",
+                key,
+                self[key]
+            )
+        })
+    }
+
     fn key_to_number(&self, key: &str) -> u64 {
         self[key].as_i64().map(|n| n as u64).unwrap_or_else(|| {
             exit!(
@@ -445,6 +456,40 @@ impl YamlExtend for Yaml {
             )
         })
     }
+
+    fn key_to_multiple_string(&self, key: &str) -> Vec<String> {
+        is_none!(self[key], return vec![]);
+
+        let mut result = vec![];
+        match self[key].as_vec() {
+            Some(items) => {
+                for (i, item) in items.iter().enumerate() {
+                    let s = item.to_string(format!("{}[{}]", key, i));
+                    result.push(s);
+                }
+            }
+            None => {
+                for line in self.key_to_string(key).lines() {
+                    for s in line.split_whitespace() {
+                        result.push(s.to_string());
+                    }
+                }
+            }
+        }
+
+        dedup(result)
+    }
+}
+
+fn dedup<T: Eq>(vec: Vec<T>) -> Vec<T> {
+    let mut new = vec![];
+    for item in vec {
+        let has = new.iter().any(|s| s == &item);
+        if !has {
+            new.push(item);
+        }
+    }
+    new
 }
 
 pub trait ToAbsolutePath {
@@ -484,8 +529,8 @@ impl ServerConfig {
 
         let mut configs: Vec<ServerConfig> = vec![];
 
-        for x in servers {
-            x.check(
+        for server in servers {
+            server.check(
                 "server",
                 &[
                     "listen",
@@ -510,13 +555,13 @@ impl ServerConfig {
                 &["listen", "root"],
             );
 
-            let parser = Parser::new(x["server"].clone());
+            let parser = Parser::new(server["server"].clone());
             let root = parser.root(&parent);
             let listens = parser.listen();
 
             let site = SiteConfig {
                 https: parser.https(&parent),
-                host: HostMatcher::new(parser.vec_or_str("host")),
+                host: parser.host(),
                 root: root.clone(),
                 echo: parser.echo(),
                 file: parser.file(&root),
@@ -561,14 +606,14 @@ impl Parser {
     }
 
     fn listen(&self) -> Vec<SocketAddr> {
-        let raw = self.yaml.key_to_string("listen");
-        let mut listen = vec![];
+        let vec = self
+            .yaml
+            .key_to_multiple_string("listen")
+            .iter()
+            .map(|s| s.as_str().to_socket_addr())
+            .collect::<Vec<SocketAddr>>();
 
-        for s in raw.split_whitespace() {
-            listen.push(s.to_socket_addr());
-        }
-
-        listen
+        dedup(vec)
     }
 
     fn https(&self, parent: &Path) -> Option<TLSConfig> {
@@ -607,21 +652,27 @@ impl Parser {
         })
     }
 
+    fn host(&self) -> HostMatcher {
+        let vec = self.yaml.key_to_multiple_string("host");
+        HostMatcher::new(vec)
+    }
+
     fn root(&self, parent: &Path) -> PathBuf {
-        let s = self.yaml.key_to_string("root");
-        s.to_absolute_path(parent)
+        self.yaml.key_to_string("root").to_absolute_path(parent)
     }
 
     fn echo(&self) -> Setting<Var<String>> {
         setting_value!(self.yaml["echo"]);
-        let s = self.yaml.key_to_string("echo");
-        Setting::Value(s.to_var())
+        let val = self.yaml.key_to_string("echo").to_var();
+
+        Setting::Value(val)
     }
 
     fn file(&self, root: &PathBuf) -> Setting<PathBuf> {
         setting_value!(self.yaml["file"]);
-        let s = self.yaml.key_to_string("file");
-        Setting::Value(s.to_absolute_path(root))
+        let val = self.yaml.key_to_string("file").to_absolute_path(root);
+
+        Setting::Value(val)
     }
 
     fn index(&self, set_default: bool) -> Setting<Vec<String>> {
@@ -634,8 +685,12 @@ impl Parser {
         } else {
             setting_none!(index);
         }
+
         setting_off!(index);
-        Setting::Value(self.vec_or_str("index"))
+
+        let val = self.yaml.key_to_multiple_string("index");
+
+        Setting::Value(val)
     }
 
     fn directory(&self) -> Setting<Directory> {
@@ -678,14 +733,13 @@ impl Parser {
     fn headers(&self) -> Setting<HeaderMap> {
         setting_value!(self.yaml["header"]);
 
-        let header = self.yaml["header"]
-            .as_hash()
-            .unwrap_or_else(|| exit!("The `header` should be in the form of a key value"));
-
+        let header = self.yaml.key_to_hash("header");
         let mut map = HeaderMap::new();
-        for (key, value) in header {
-            let key = key.to_string("header 'key'");
-            let value = value.to_string(format!("header '{}'", key));
+
+        for (i, (key, value)) in header.iter().enumerate() {
+            let key = key.to_string(format!("header[{}]", i));
+            let value = value.to_string(&key);
+
             map.insert(
                 key.as_str().to_header_name(),
                 value.as_str().to_header_value(),
@@ -697,9 +751,9 @@ impl Parser {
 
     fn rewrite(&self) -> Setting<Rewrite> {
         setting_value!(self.yaml["rewrite"]);
-        let s = self.yaml.key_to_string("rewrite");
+        let val = self.yaml.key_to_string("rewrite");
 
-        Setting::Value(Rewrite::parse(s))
+        Setting::Value(Rewrite::parse(val))
     }
 
     fn compress(&self) -> Setting<Compress> {
@@ -707,7 +761,7 @@ impl Parser {
         setting_value!(compress);
 
         // compress: true
-        if let Some(_) = compress.as_bool() {
+        if compress.as_bool().is_some() {
             return Setting::Value(Compress {
                 mode: ContentEncoding::Auto(default::COMPRESS_LEVEL),
                 extensions: default::COMPRESS_EXTENSIONS
@@ -720,17 +774,13 @@ impl Parser {
         self.yaml
             .check("compress", &["mode", "level", "extension"], &[]);
 
-        let level = is_none!(
-            compress["level"],
-            default::COMPRESS_LEVEL,
-            {
-                let level = compress.key_to_number("level");
-                if level > 9 || level < 0 {
-                    exit!("Compress level should be an integer between 0-9")
-                }
-                level as u32
+        let level = is_none!(compress["level"], default::COMPRESS_LEVEL, {
+            let level = compress.key_to_number("level");
+            if level > 9 {
+                exit!("Compress level should be an integer between 0-9")
             }
-        );
+            level as u32
+        });
 
         let mode = is_none!(compress["mode"], ContentEncoding::Auto(level), {
             let mode = compress.key_to_string("mode");
@@ -745,7 +795,7 @@ impl Parser {
                     .map(|e| e.to_string())
                     .collect()
             },
-            Parser::new(compress.clone()).vec_or_str("extension")
+            compress.key_to_multiple_string("extension")
         );
 
         Setting::Value(Compress { mode, extensions })
@@ -753,7 +803,9 @@ impl Parser {
 
     fn extensions(&self) -> Setting<Vec<String>> {
         setting_value!(self.yaml["extension"]);
-        Setting::Value(self.vec_or_str("extension"))
+        let extensions = self.yaml.key_to_multiple_string("extension");
+
+        Setting::Value(extensions)
     }
 
     fn methods(&self, set_default: bool) -> Setting<Vec<Method>> {
@@ -765,12 +817,14 @@ impl Parser {
             setting_none!(method);
         }
 
-        let value = self
-            .vec_or_str("method")
+        let methods = self
+            .yaml
+            .key_to_multiple_string("method")
             .iter()
-            .map(|d| d.as_str().to_method())
+            .map(|m| m.as_str().to_method())
             .collect::<Vec<Method>>();
-        Setting::Value(value)
+
+        Setting::Value(methods)
     }
 
     fn auth(&self) -> Setting<String> {
@@ -784,6 +838,7 @@ impl Parser {
             auth.key_to_string("user"),
             auth.key_to_string("password")
         );
+
         Setting::Value(format!("Basic {}", encode(&s)))
     }
 
@@ -804,7 +859,8 @@ impl Parser {
 
     fn status_item(&self, status: usize, root: &PathBuf) -> Setting<PathBuf> {
         setting_value!(self.yaml[status]);
-        let s = self.yaml[status].to_string(format!("status '{}'", status));
+        let s = self.yaml[status].to_string(status);
+
         Setting::Value(s.to_absolute_path(root))
     }
 
@@ -814,10 +870,13 @@ impl Parser {
         self.yaml
             .check("proxy", &["uri", "method", "timeout", "header"], &["uri"]);
 
-        let uri = Parser::new(proxy.clone())
-            .vec_or_str("uri")
+        let uri = proxy
+            .key_to_multiple_string("uri")
             .iter()
-            .map(|u| u.clone().to_var().map_none(|s| s.as_str().to_uri()))
+            .map(|u| {
+                let var = u.clone().to_var();
+                var.map_none(|s| s.as_str().to_uri())
+            })
             .collect::<Vec<Var<Uri>>>();
 
         let method = is_none!(proxy["method"], None, Some(proxy.key_to_string("method")))
@@ -839,32 +898,14 @@ impl Parser {
         })
     }
 
-    fn vec_or_str(&self, key: &str) -> Vec<String> {
-        is_none!(self.yaml[key], return vec![]);
-        match self.yaml[key].as_vec() {
-            Some(vec) => {
-                let mut result = vec![];
-                for item in vec {
-                    let d = item.to_string(format!("{} 'item'", key));
-                    result.push(d);
-                }
-                result
-            }
-            None => vec![self.yaml[key].to_string(key)],
-        }
-    }
-
     fn location(&self, parent: PathBuf) -> Vec<Location> {
         is_none!(self.yaml["location"], return vec![]);
 
-        let hash = match self.yaml["location"].as_hash() {
-            Some(d) => d,
-            None => exit!("Cannot parse `location` to hash"),
-        };
+        let hash = self.yaml.key_to_hash("location");
         let mut vec = vec![];
 
-        for (key, server) in hash {
-            let route = key.to_string("location 'key'");
+        for (i, (key, server)) in hash.iter().enumerate() {
+            let route = key.to_string(format!("location[{}]", i));
 
             self.yaml["location"].check(
                 &route,
@@ -888,16 +929,13 @@ impl Parser {
             );
 
             let parser = Parser::new(server.clone());
-            if let None = parser.yaml.as_hash() {
-                exit!("Cannot parse `location {}` to hash", route)
-            }
 
             let lr = parser.location_root();
             let root = match &lr {
                 Some(a) => a.to_absolute_path(&parent),
                 None => parent.clone(),
             };
-            let d = lr.map(|a| a.to_absolute_path(&parent));
+            let d = lr.map(|s| s.to_absolute_path(&parent));
 
             vec.push(Location {
                 location: LocationMatcher::new(route.as_str()),
