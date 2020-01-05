@@ -2,6 +2,7 @@ use crate::{Directory, HostMatcher, ServerConfig, Setting, SiteConfig, StatusPag
 use hyper::Method;
 use std::net::SocketAddr;
 use std::path::PathBuf;
+use std::time::Duration;
 
 // Package
 
@@ -33,7 +34,7 @@ pub const PROXY_BUF_SIZE: usize = 2 * 1024;
 
 pub const TIMEOUT: u64 = 5000;
 
-pub const PROXY_TIMEOUT: u64 = 5000;
+pub const PROXY_TIMEOUT: Duration = Duration::from_millis(5000);
 
 // Quick start
 

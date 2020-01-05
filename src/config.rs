@@ -301,17 +301,48 @@ macro_rules! is_none {
 }
 
 pub trait ForceTo {
+    fn to_duration(&self) -> Duration;
     fn to_glob(&self) -> Glob;
     fn to_header_name(&self) -> HeaderName;
     fn to_header_value(&self) -> HeaderValue;
     fn to_method(&self) -> Method;
     fn to_regex(&self) -> Regex;
     fn to_socket_addr(&self) -> SocketAddr;
-    fn to_uri(&self) -> Uri;
     fn to_strftime(&self);
+    fn to_uri(&self) -> Uri;
+}
+
+lazy_static! {
+    static ref REGEX_MATCH_TIME: Regex = Regex::new(r"^(\d+\.?\d+)(d|h|m|s|ms)$").unwrap();
 }
 
 impl ForceTo for &str {
+    fn to_duration(&self) -> Duration {
+        let reg: &Regex = &REGEX_MATCH_TIME;
+        let cap = reg
+            .captures(self)
+            .unwrap_or_else(|| exit!("Cannot parse `{}` to duration", self));
+
+        if let (Some(time), Some(unit)) = (cap.get(1), cap.get(2)) {
+            let n = time
+                .as_str()
+                .parse::<f64>()
+                .unwrap_or_else(|err| exit!("Cannot parse `{}` to number\n{}", time.as_str(), err));
+
+            let ms = match unit.as_str() {
+                "d" => 24_f64 * 60_f64 * 60_f64 * 1000_f64 * n,
+                "h" => 60_f64 * 60_f64 * 1000_f64 * n,
+                "m" => 60_f64 * 1000_f64 * n,
+                "s" => 1000_f64 * n,
+                "ms" => n,
+                _ => panic!(),
+            };
+
+            return Duration::from_millis(ms as u64);
+        }
+        panic!()
+    }
+
     fn to_glob(&self) -> Glob {
         Glob::new(self)
             .unwrap_or_else(|err| exit!("Cannot parse `{}` to glob matcher\n{}", self, err))
@@ -349,15 +380,15 @@ impl ForceTo for &str {
         exit!("Cannot parse `{}` to SocketAddr", self)
     }
 
-    fn to_uri(&self) -> Uri {
-        self.parse::<Uri>()
-            .unwrap_or_else(|err| exit!("Cannot parse `{}` to http uri\n{}", self, err))
-    }
-
     fn to_strftime(&self) {
         time::now()
             .strftime(self)
             .unwrap_or_else(|err| exit!("Cannot parse `{}` to time format\n{}", self, err));
+    }
+
+    fn to_uri(&self) -> Uri {
+        self.parse::<Uri>()
+            .unwrap_or_else(|err| exit!("Cannot parse `{}` to http uri\n{}", self, err))
     }
 }
 
@@ -885,7 +916,7 @@ impl Parser {
         let timeout = is_none!(
             proxy["timeout"],
             default::PROXY_TIMEOUT,
-            proxy.key_to_number("timeout")
+            proxy.key_to_string("timeout").as_str().to_duration()
         );
 
         let headers = Parser::new(self.yaml.clone()).headers();
@@ -893,7 +924,7 @@ impl Parser {
         Setting::Value(Proxy {
             uri,
             method,
-            timeout: Duration::from_millis(timeout),
+            timeout,
             headers,
         })
     }

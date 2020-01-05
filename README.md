@@ -267,7 +267,7 @@ Proxy options
 proxy:
   uri: http://example.com  # Proxy address
   method: GET              # Change the method of the proxy
-  timeout: 3000            # timeout (ms)
+  timeout: 3s              # timeout: 2d 2m 2h 2s 2ms format
   header:                  # Header in proxy request
     key: value
 # or
