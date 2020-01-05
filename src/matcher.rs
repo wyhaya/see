@@ -4,12 +4,14 @@ use globset::GlobMatcher;
 use regex::Regex;
 
 const REGEX_WORD: char = '~';
-const WILDCARD: char = '*';
+const START_WORD: char = '^';
+const END_WORD: char = '$';
+const ANY_WORD: char = '*';
 
-// Whether to use regular expression matching
-fn get_regex_str(text: &str) -> Option<String> {
-    if text.starts_with(REGEX_WORD) {
-        let s = text.replacen(REGEX_WORD, "", 1);
+// Get pattern matching text
+fn get_match_str(text: &str, start: char) -> Option<String> {
+    if text.starts_with(start) {
+        let s = text.replacen(start, "", 1);
         Some(s.trim().to_owned())
     } else {
         None
@@ -24,26 +26,39 @@ pub struct LocationMatcher(LocationMatchMode);
 enum LocationMatchMode {
     Glob(GlobMatcher),
     Regex(Regex),
+    Start(String),
+    End(String),
 }
 
 impl LocationMatcher {
     pub fn new(location: &str) -> Self {
-        match get_regex_str(location) {
-            Some(raw) => {
-                let reg = raw.as_str().to_regex();
-                LocationMatcher(LocationMatchMode::Regex(reg))
-            }
-            None => {
-                let glob = location.to_glob().compile_matcher();
-                LocationMatcher(LocationMatchMode::Glob(glob))
-            }
+        // Regex
+        if let Some(raw) = get_match_str(location, REGEX_WORD) {
+            let reg = raw.as_str().to_regex();
+            return LocationMatcher(LocationMatchMode::Regex(reg));
         }
+
+        // Start
+        if let Some(raw) = get_match_str(location, START_WORD) {
+            return LocationMatcher(LocationMatchMode::Start(raw));
+        }
+
+        // End
+        if let Some(raw) = get_match_str(location, END_WORD) {
+            return LocationMatcher(LocationMatchMode::End(raw));
+        }
+
+        // Glob
+        let glob = location.to_glob().compile_matcher();
+        LocationMatcher(LocationMatchMode::Glob(glob))
     }
 
     pub fn is_match(&self, path: &str) -> bool {
         match &self.0 {
             LocationMatchMode::Glob(glob) => glob.is_match(path),
             LocationMatchMode::Regex(reg) => reg.is_match(path),
+            LocationMatchMode::Start(s) => path.starts_with(s),
+            LocationMatchMode::End(s) => path.ends_with(s),
         }
     }
 }
@@ -70,14 +85,14 @@ impl HostMatcher {
         let mut matcher = vec![];
         for item in items {
             // Use regex: ~^example\.com$
-            if let Some(raw) = get_regex_str(&item) {
+            if let Some(raw) = get_match_str(&item, REGEX_WORD) {
                 let reg = raw.as_str().to_regex();
                 matcher.push(HostMatcherMode::Regex(reg));
                 continue;
             }
 
             // Use wildcard match: *.example.com
-            let has_wildcard = item.chars().any(|ch| ch == WILDCARD);
+            let has_wildcard = item.chars().any(|ch| ch == ANY_WORD);
             if has_wildcard {
                 let wildcard = HostMatcherMode::Wildcard(HostWildcardMatcher::new(&item));
                 matcher.push(wildcard);
@@ -199,15 +214,29 @@ mod test_matcher {
     fn test_location_create() {}
 
     #[test]
-    fn test_location_glob() {
-        let matcher = LocationMatcher::new("/test/*");
+    fn test_location_start() {
+        let matcher = LocationMatcher::new("^/test/");
         assert!(matcher.is_match("/test/a"));
         assert!(matcher.is_match("/test/a/b"));
     }
 
     #[test]
+    fn test_location_end() {
+        let matcher = LocationMatcher::new("$.png");
+        assert!(matcher.is_match("/test/a.png"));
+        assert!(matcher.is_match("/test/a/b.png"));
+    }
+
+    #[test]
     fn test_location_regex() {
         let matcher = LocationMatcher::new(r"~/test/.*");
+        assert!(matcher.is_match("/test/a"));
+        assert!(matcher.is_match("/test/a/b"));
+    }
+
+    #[test]
+    fn test_location_glob() {
+        let matcher = LocationMatcher::new("/test/*");
         assert!(matcher.is_match("/test/a"));
         assert!(matcher.is_match("/test/a/b"));
     }

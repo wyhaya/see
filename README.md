@@ -282,6 +282,13 @@ proxy:                     # Rand proxy
 
 Separately configured for certain locations
 
+Match pattern
+
+* Use `glob` matching by default
+* `~` Use regular expressions
+* `^` Match start character
+* `$` Match end character
+
 ```yaml
 location: 
   /public:
