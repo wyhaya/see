@@ -1,7 +1,5 @@
-#[macro_use]
-extern crate lazy_static;
-
 mod config;
+mod connector;
 mod default;
 mod directory;
 mod encoding;
@@ -15,6 +13,7 @@ use config::{
     ContentEncoding, Directory, ForceTo, Proxy, RewriteStatus, ServerConfig, Setting, SiteConfig,
     StatusPage, ToAbsolutePath,
 };
+use connector::Connector;
 use dirs;
 use futures::io;
 use futures::StreamExt;
@@ -28,7 +27,7 @@ use hyper::server::accept::from_stream;
 use hyper::server::conn::Http;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Client, HeaderMap, Method, Request, Response, StatusCode, Uri, Version};
-use hyper_tls::HttpsConnector;
+use lazy_static::lazy_static;
 use libc;
 use matcher::HostMatcher;
 use rand::prelude::*;
@@ -431,16 +430,10 @@ async fn proxy_response(mut req: Request<Body>, c: Proxy, config: &SiteConfig) -
         req.headers_mut().extend(headers);
     }
 
-    let is_http = req.uri().scheme_str().map(|d| d == "http").unwrap_or(false);
-    let res = if is_http {
-        let client = Client::new();
-        client.request(req).await
-    } else {
-        let client = Client::builder().build::<_, hyper::Body>(HttpsConnector::new());
-        client.request(req).await
-    };
+    let is_https = req.uri().scheme_str() == Some("https");
+    let client = Client::builder().build::<_, Body>(Connector::new(is_https));
 
-    match res {
+    match client.request(req).await {
         Ok(res) => res,
         Err(_) => {
             // 502
