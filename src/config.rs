@@ -300,6 +300,46 @@ macro_rules! is_none {
     }};
 }
 
+// Parse time format into Duration
+// format: 1d 1.2h 5s ...
+fn try_parse_duration(text: &str) -> Result<Duration, ()> {
+    lazy_static! {
+        static ref REGEX_MATCH_TIME: Regex =
+            Regex::new(r"^(?P<time>\d+(\.\d+)?)(?P<unit>d|h|m|s|ms)$").unwrap();
+    }
+    let reg: &Regex = &REGEX_MATCH_TIME;
+
+    let cap = reg.captures(text).ok_or_else(|| ())?;
+    let time = cap.name("time").unwrap();
+    let unit = cap.name("unit").unwrap();
+
+    let n = time.as_str().parse::<f64>().map_err(|_| ())?;
+
+    let ms = match unit.as_str() {
+        "d" => 24_f64 * 60_f64 * 60_f64 * 1000_f64 * n,
+        "h" => 60_f64 * 60_f64 * 1000_f64 * n,
+        "m" => 60_f64 * 1000_f64 * n,
+        "s" => 1000_f64 * n,
+        "ms" => n,
+        _ => panic!(),
+    };
+
+    Ok(Duration::from_millis(ms as u64))
+}
+
+fn try_to_socket_addr(text: &str) -> Result<SocketAddr, ()> {
+    if let Ok(addr) = text.parse::<SocketAddr>() {
+        return Ok(addr);
+    }
+    if let Ok(port) = text.parse::<i64>() {
+        if let Ok(addr) = format!("0.0.0.0:{}", port).parse::<SocketAddr>() {
+            return Ok(addr);
+        }
+    }
+
+    Err(())
+}
+
 pub trait ForceTo {
     fn to_duration(&self) -> Duration;
     fn to_glob(&self) -> Glob;
@@ -312,35 +352,9 @@ pub trait ForceTo {
     fn to_uri(&self) -> Uri;
 }
 
-lazy_static! {
-    static ref REGEX_MATCH_TIME: Regex = Regex::new(r"^(\d+\.?\d+)(d|h|m|s|ms)$").unwrap();
-}
-
 impl ForceTo for &str {
     fn to_duration(&self) -> Duration {
-        let reg: &Regex = &REGEX_MATCH_TIME;
-        let cap = reg
-            .captures(self)
-            .unwrap_or_else(|| exit!("Cannot parse `{}` to duration", self));
-
-        if let (Some(time), Some(unit)) = (cap.get(1), cap.get(2)) {
-            let n = time
-                .as_str()
-                .parse::<f64>()
-                .unwrap_or_else(|err| exit!("Cannot parse `{}` to number\n{}", time.as_str(), err));
-
-            let ms = match unit.as_str() {
-                "d" => 24_f64 * 60_f64 * 60_f64 * 1000_f64 * n,
-                "h" => 60_f64 * 60_f64 * 1000_f64 * n,
-                "m" => 60_f64 * 1000_f64 * n,
-                "s" => 1000_f64 * n,
-                "ms" => n,
-                _ => panic!(),
-            };
-
-            return Duration::from_millis(ms as u64);
-        }
-        panic!()
+        try_parse_duration(self).unwrap_or_else(|_| exit!("Cannot parse `{}` to duration", self))
     }
 
     fn to_glob(&self) -> Glob {
@@ -369,15 +383,7 @@ impl ForceTo for &str {
     }
 
     fn to_socket_addr(&self) -> SocketAddr {
-        if let Ok(addr) = self.parse::<SocketAddr>() {
-            return addr;
-        }
-        if let Ok(port) = self.parse::<i64>() {
-            if let Ok(addr) = format!("0.0.0.0:{}", port).parse::<SocketAddr>() {
-                return addr;
-            }
-        }
-        exit!("Cannot parse `{}` to SocketAddr", self)
+        try_to_socket_addr(self).unwrap_or_else(|_| exit!("Cannot parse `{}` to SocketAddr", self))
     }
 
     fn to_strftime(&self) {
@@ -449,7 +455,7 @@ impl YamlExtend for Yaml {
     }
 
     fn key_to_bool(&self, key: &str) -> bool {
-        self.as_bool().unwrap_or_else(|| {
+        self[key].as_bool().unwrap_or_else(|| {
             exit!(
                 "Cannot parse `{}`, It should be 'boolean', but found:\n{:#?}",
                 key,
@@ -539,7 +545,7 @@ impl ToAbsolutePath for String {
 }
 
 impl ServerConfig {
-    pub fn new(path: &str) -> Vec<ServerConfig> {
+    pub fn new(path: &str) -> Vec<Self> {
         let parent = Path::new(&path)
             .parent()
             .unwrap_or_else(|| exit!("Cannot get configuration file directory"));
