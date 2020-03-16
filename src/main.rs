@@ -5,6 +5,7 @@ mod directory;
 mod encoding;
 mod matcher;
 mod mime;
+mod process;
 mod var;
 
 use ace::App;
@@ -28,8 +29,8 @@ use hyper::server::conn::Http;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Client, HeaderMap, Method, Request, Response, StatusCode, Uri, Version};
 use lazy_static::lazy_static;
-use libc;
 use matcher::HostMatcher;
+use process::ExitError;
 use rand::prelude::*;
 use regex::Regex;
 use std::convert::Infallible;
@@ -198,11 +199,11 @@ fn stop_daemon() {
                 Err(_) => exit!("Cannot parse pid '{}'", pid),
             };
 
-            if unsafe { libc::kill(pid, 0) } != 0 {
-                exit!("Process does not exist")
-            }
-            if unsafe { libc::kill(pid, 1) } != 0 {
-                exit!("Can't kill the process")
+            if let Err(err) = process::exit(pid) {
+                match err {
+                    ExitError::None => exit!("Process does not exist"),
+                    ExitError::Failure => exit!("Can't kill the process"),
+                }
             }
         }
         Err(e) => {
