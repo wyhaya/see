@@ -300,31 +300,59 @@ macro_rules! is_none {
     }};
 }
 
+#[derive(Debug)]
+enum ParseDurationError {
+    NoNumber,
+    NoUnit,
+    ErrorNumber,
+    ErrorUnit,
+    Zero,
+}
+
+impl ParseDurationError {
+    fn description(&self) -> &str {
+        match self {
+            ParseDurationError::NoNumber => "no number",
+            ParseDurationError::NoUnit => "no unit",
+            ParseDurationError::ErrorNumber => "error number",
+            ParseDurationError::ErrorUnit => "error unit",
+            ParseDurationError::Zero => "zero",
+        }
+    }
+}
+
 // Parse time format into Duration
 // format: 1d 1.2h 5s ...
-fn try_parse_duration(text: &str) -> Result<Duration, ()> {
-    lazy_static! {
-        static ref REGEX_MATCH_TIME: Regex =
-            Regex::new(r"^(?P<time>\d+(\.\d+)?)(?P<unit>d|h|m|s|ms)$").unwrap();
+fn try_parse_duration(text: &str) -> Result<Duration, ParseDurationError> {
+    let numbers = "0123456789.".chars().collect::<Vec<char>>();
+    let i = text
+        .chars()
+        .position(|ch| !numbers.contains(&ch))
+        .ok_or_else(|| ParseDurationError::NoUnit)?;
+
+    let time = &text[..i];
+    let unit = &text[i..];
+
+    if time.is_empty() {
+        return Err(ParseDurationError::NoNumber);
     }
-    let reg: &Regex = &REGEX_MATCH_TIME;
+    let n = time
+        .parse::<f64>()
+        .map_err(|_| ParseDurationError::ErrorNumber)?;
+    let ms = match unit {
+        "d" => Ok(24_f64 * 60_f64 * 60_f64 * 1000_f64 * n),
+        "h" => Ok(60_f64 * 60_f64 * 1000_f64 * n),
+        "m" => Ok(60_f64 * 1000_f64 * n),
+        "s" => Ok(1000_f64 * n),
+        "ms" => Ok(n),
+        _ => Err(ParseDurationError::ErrorUnit),
+    }? as u64;
 
-    let cap = reg.captures(text).ok_or_else(|| ())?;
-    let time = cap.name("time").unwrap();
-    let unit = cap.name("unit").unwrap();
-
-    let n = time.as_str().parse::<f64>().map_err(|_| ())?;
-
-    let ms = match unit.as_str() {
-        "d" => 24_f64 * 60_f64 * 60_f64 * 1000_f64 * n,
-        "h" => 60_f64 * 60_f64 * 1000_f64 * n,
-        "m" => 60_f64 * 1000_f64 * n,
-        "s" => 1000_f64 * n,
-        "ms" => n,
-        _ => panic!(),
-    };
-
-    Ok(Duration::from_millis(ms as u64))
+    if ms == 0 {
+        Err(ParseDurationError::Zero)
+    } else {
+        Ok(Duration::from_millis(ms))
+    }
 }
 
 fn try_to_socket_addr(text: &str) -> Result<SocketAddr, ()> {
@@ -354,7 +382,9 @@ pub trait ForceTo {
 
 impl ForceTo for &str {
     fn to_duration(&self) -> Duration {
-        try_parse_duration(self).unwrap_or_else(|_| exit!("Cannot parse `{}` to duration", self))
+        try_parse_duration(self).unwrap_or_else(|err| {
+            exit!("Cannot parse `{}` to duration: {}", self, err.description())
+        })
     }
 
     fn to_glob(&self) -> Glob {
