@@ -1,3 +1,4 @@
+mod base64;
 mod config;
 mod connector;
 mod default;

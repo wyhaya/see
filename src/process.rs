@@ -9,7 +9,7 @@ pub fn exit(pid: i32) -> Result<(), ExitError> {
     if unsafe { libc::kill(pid, 0) } != 0 {
         return Err(ExitError::None);
     }
-    if unsafe { libc::kill(pid, 1) } != 0 {
+    if unsafe { libc::kill(pid, libc::SIGTERM) } != 0 {
         return Err(ExitError::Failure);
     }
 

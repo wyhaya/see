@@ -20,7 +20,6 @@ keywords = [
 [dependencies]
 ace = "0.0.3"
 async-compression = { version = "0.2.0", features = ["futures-write", "gzip", "deflate", "brotli"] }
-base64 = "0.11.0"
 bright = "0.2.0"
 dirs = "2.0.2"
 futures = "0.3.1"
