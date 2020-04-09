@@ -1,22 +1,21 @@
+use crate::compress::encoding::Encoding;
+use crate::config::default;
+use crate::config::ForceTo;
+use crate::util::*;
 use crate::var::{ToVar, Var};
+use crate::yaml::YamlExtend;
 use crate::*;
 use base64::encode;
-use globset::Glob;
 use hyper::{Method, Uri};
 use matcher::{HostMatcher, LocationMatcher};
-use regex::Regex;
-use std::fmt::Display;
 use std::fs;
 use std::io::BufReader;
-use std::net::SocketAddr;
 use std::path::Path;
-use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio_rustls::rustls::internal::pemfile::{certs, rsa_private_keys};
 use tokio_rustls::rustls::{NoClientAuth, ServerConfig as Config};
 use tokio_rustls::TlsAcceptor;
-use yaml_rust::yaml::Hash;
 use yaml_rust::{Yaml, YamlLoader};
 
 #[derive(Debug, Clone)]
@@ -27,10 +26,10 @@ pub enum Setting<T> {
 }
 
 impl<T> Setting<T> {
-    pub fn has_value(&self) -> bool {
+    pub fn is_none(&self) -> bool {
         match self {
-            Setting::None => false,
-            _ => true,
+            Setting::None => true,
+            _ => false,
         }
     }
 
@@ -125,15 +124,25 @@ pub enum RewriteStatus {
     _302,
 }
 
+impl From<&str> for RewriteStatus {
+    fn from(s: &str) -> Self {
+        match s {
+            "301" => RewriteStatus::_301,
+            "302" => RewriteStatus::_302,
+            _ => exit!("Wrong redirect type `{}`, optional value: `301` `302`", s),
+        }
+    }
+}
+
 impl Default for RewriteStatus {
     fn default() -> Self {
         RewriteStatus::_302
     }
 }
 
-impl Rewrite {
-    fn parse(rewrite: String) -> Rewrite {
-        let mut split = rewrite.split_whitespace();
+impl From<String> for Rewrite {
+    fn from(s: String) -> Self {
+        let mut split = s.split_whitespace();
 
         let location = split
             .next()
@@ -141,11 +150,7 @@ impl Rewrite {
 
         let status = split
             .next()
-            .map(|s| match s {
-                "301" => RewriteStatus::_301,
-                "302" => RewriteStatus::_302,
-                _ => exit!("Wrong redirect type `{}`, optional value: `301` `302`", s),
-            })
+            .map(RewriteStatus::from)
             .unwrap_or_default();
 
         let val = location
@@ -162,81 +167,8 @@ impl Rewrite {
 
 #[derive(Debug, Clone)]
 pub struct Compress {
-    pub mode: ContentEncoding,
+    pub mode: Encoding,
     pub extensions: Vec<String>,
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub enum ContentEncoding {
-    Auto(u32),
-    Gzip(u32),
-    Deflate(u32),
-    Br(u32),
-    None,
-}
-
-impl ContentEncoding {
-    pub fn from(mode: &str, level: u32) -> Self {
-        match mode {
-            "auto" => ContentEncoding::Auto(level),
-            "gzip" => ContentEncoding::Gzip(level),
-            "deflate" => ContentEncoding::Deflate(level),
-            "br" => ContentEncoding::Br(level),
-            _ => exit!(
-                "Wrong compression mode `{}`, optional value: `auto` `gzip` `deflate` `br`",
-                mode
-            ),
-        }
-    }
-
-    pub fn parse_mode(&self, modes: Vec<&str>) -> Self {
-        match self {
-            ContentEncoding::Auto(level) => {
-                for mode in modes {
-                    match mode {
-                        "gzip" => return ContentEncoding::Gzip(*level),
-                        "deflate" => return ContentEncoding::Deflate(*level),
-                        "br" => return ContentEncoding::Br(*level),
-                        _ => {}
-                    };
-                }
-            }
-            ContentEncoding::Gzip(level) => {
-                for mode in modes {
-                    if mode == "gzip" {
-                        return ContentEncoding::Gzip(*level);
-                    }
-                }
-            }
-            ContentEncoding::Deflate(level) => {
-                for mode in modes {
-                    if mode == "deflate" {
-                        return ContentEncoding::Deflate(*level);
-                    }
-                }
-            }
-            ContentEncoding::Br(level) => {
-                for mode in modes {
-                    if mode == "br" {
-                        return ContentEncoding::Br(*level);
-                    }
-                }
-            }
-            _ => {}
-        }
-        ContentEncoding::None
-    }
-
-    pub fn to_header_value(&self) -> HeaderValue {
-        let s = match self {
-            ContentEncoding::Gzip(_) => "gzip",
-            ContentEncoding::Deflate(_) => "deflate",
-            ContentEncoding::Br(_) => "br",
-            _ => "",
-        };
-
-        HeaderValue::from_static(s)
-    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -283,295 +215,6 @@ macro_rules! setting_off {
             }
         }
     };
-}
-
-macro_rules! is_none {
-    ($yaml: expr, $bad: expr) => {
-        if $yaml.is_badvalue() {
-            $bad;
-        }
-    };
-    ($yaml: expr, $bad: expr, $ok: expr) => {{
-        if $yaml.is_badvalue() {
-            $bad
-        } else {
-            $ok
-        }
-    }};
-}
-
-#[derive(Debug)]
-enum ParseDurationError {
-    NoNumber,
-    NoUnit,
-    ErrorNumber,
-    ErrorUnit,
-    Zero,
-}
-
-impl ParseDurationError {
-    fn description(&self) -> &str {
-        match self {
-            ParseDurationError::NoNumber => "no number",
-            ParseDurationError::NoUnit => "no unit",
-            ParseDurationError::ErrorNumber => "error number",
-            ParseDurationError::ErrorUnit => "error unit",
-            ParseDurationError::Zero => "zero",
-        }
-    }
-}
-
-// Parse time format into Duration
-// format: 1d 1.2h 5s ...
-fn try_parse_duration(text: &str) -> Result<Duration, ParseDurationError> {
-    let numbers = "0123456789.".chars().collect::<Vec<char>>();
-    let i = text
-        .chars()
-        .position(|ch| !numbers.contains(&ch))
-        .ok_or_else(|| ParseDurationError::NoUnit)?;
-
-    let time = &text[..i];
-    let unit = &text[i..];
-
-    if time.is_empty() {
-        return Err(ParseDurationError::NoNumber);
-    }
-    let n = time
-        .parse::<f64>()
-        .map_err(|_| ParseDurationError::ErrorNumber)?;
-    let ms = match unit {
-        "d" => Ok(24_f64 * 60_f64 * 60_f64 * 1000_f64 * n),
-        "h" => Ok(60_f64 * 60_f64 * 1000_f64 * n),
-        "m" => Ok(60_f64 * 1000_f64 * n),
-        "s" => Ok(1000_f64 * n),
-        "ms" => Ok(n),
-        _ => Err(ParseDurationError::ErrorUnit),
-    }? as u64;
-
-    if ms == 0 {
-        Err(ParseDurationError::Zero)
-    } else {
-        Ok(Duration::from_millis(ms))
-    }
-}
-
-fn try_to_socket_addr(text: &str) -> Result<SocketAddr, ()> {
-    if let Ok(addr) = text.parse::<SocketAddr>() {
-        return Ok(addr);
-    }
-    if let Ok(port) = text.parse::<i64>() {
-        if let Ok(addr) = format!("0.0.0.0:{}", port).parse::<SocketAddr>() {
-            return Ok(addr);
-        }
-    }
-
-    Err(())
-}
-
-pub trait ForceTo {
-    fn to_duration(&self) -> Duration;
-    fn to_glob(&self) -> Glob;
-    fn to_header_name(&self) -> HeaderName;
-    fn to_header_value(&self) -> HeaderValue;
-    fn to_method(&self) -> Method;
-    fn to_regex(&self) -> Regex;
-    fn to_socket_addr(&self) -> SocketAddr;
-    fn to_strftime(&self);
-    fn to_uri(&self) -> Uri;
-}
-
-impl ForceTo for &str {
-    fn to_duration(&self) -> Duration {
-        try_parse_duration(self).unwrap_or_else(|err| {
-            exit!("Cannot parse `{}` to duration: {}", self, err.description())
-        })
-    }
-
-    fn to_glob(&self) -> Glob {
-        Glob::new(self)
-            .unwrap_or_else(|err| exit!("Cannot parse `{}` to glob matcher\n{}", self, err))
-    }
-
-    fn to_header_name(&self) -> HeaderName {
-        HeaderName::from_str(self)
-            .unwrap_or_else(|err| exit!("Cannot parse `{}` to http header name\n{}", self, err))
-    }
-
-    fn to_header_value(&self) -> HeaderValue {
-        HeaderValue::from_str(self)
-            .unwrap_or_else(|err| exit!("Cannot parse `{}` to http header value\n{}", self, err))
-    }
-
-    fn to_method(&self) -> Method {
-        Method::from_str(self)
-            .unwrap_or_else(|err| exit!("Cannot parse `{}` to http method\n{}", self, err))
-    }
-
-    fn to_regex(&self) -> Regex {
-        Regex::new(self)
-            .unwrap_or_else(|err| exit!("Cannot parse `{}` to regular expression\n{}", self, err))
-    }
-
-    fn to_socket_addr(&self) -> SocketAddr {
-        try_to_socket_addr(self).unwrap_or_else(|_| exit!("Cannot parse `{}` to SocketAddr", self))
-    }
-
-    fn to_strftime(&self) {
-        time::now()
-            .strftime(self)
-            .unwrap_or_else(|err| exit!("Cannot parse `{}` to time format\n{}", self, err));
-    }
-
-    fn to_uri(&self) -> Uri {
-        self.parse::<Uri>()
-            .unwrap_or_else(|err| exit!("Cannot parse `{}` to http uri\n{}", self, err))
-    }
-}
-
-trait YamlExtend {
-    fn check(&self, name: &str, keys: &[&str], must: &[&str]);
-    fn try_to_string(&self) -> Option<String>;
-    fn to_string<T: Display>(&self, msg: T) -> String;
-    fn key_to_bool(&self, key: &str) -> bool;
-    fn key_to_hash(&self, key: &str) -> &Hash;
-    fn key_to_number(&self, key: &str) -> u64;
-    fn key_to_string(&self, key: &str) -> String;
-    fn key_to_multiple_string(&self, key: &str) -> Vec<String>;
-}
-
-impl YamlExtend for Yaml {
-    fn check(&self, name: &str, keys: &[&str], must: &[&str]) {
-        let hash = self.key_to_hash(name);
-
-        // Disallowed key
-        for (key, _) in hash {
-            let key = key.to_string(format!("{} 'key'", name));
-            let find = keys.iter().any(|item| *item == &key);
-            if !find {
-                exit!("Check failed, unknown directive `{}` in '{}'", key, name)
-            }
-        }
-
-        // Required key
-        for must in must {
-            is_none!(
-                self[name][must.clone()],
-                exit!("Missing '{}' in '{}'", must, name)
-            )
-        }
-    }
-
-    fn try_to_string(&self) -> Option<String> {
-        if let Some(s) = self.as_str() {
-            return Some(s.to_string());
-        }
-        if let Some(s) = self.as_i64() {
-            return Some(s.to_string());
-        }
-        if let Some(s) = self.as_f64() {
-            return Some(s.to_string());
-        }
-        None
-    }
-
-    fn to_string<T: Display>(&self, msg: T) -> String {
-        self.try_to_string().unwrap_or_else(|| {
-            exit!(
-                "Cannot parse `{}`, It should be 'string', but found:\n{:#?}",
-                msg,
-                self
-            )
-        })
-    }
-
-    fn key_to_bool(&self, key: &str) -> bool {
-        self[key].as_bool().unwrap_or_else(|| {
-            exit!(
-                "Cannot parse `{}`, It should be 'boolean', but found:\n{:#?}",
-                key,
-                self[key]
-            )
-        })
-    }
-
-    fn key_to_hash(&self, key: &str) -> &Hash {
-        self[key].as_hash().unwrap_or_else(|| {
-            exit!(
-                "Cannot parse `{}`, It should be 'hash', but found:\n{:#?}",
-                key,
-                self[key]
-            )
-        })
-    }
-
-    fn key_to_number(&self, key: &str) -> u64 {
-        self[key].as_i64().map(|n| n as u64).unwrap_or_else(|| {
-            exit!(
-                "Cannot parse `{}`, It should be 'number', but found:\n{:#?}",
-                key,
-                self[key]
-            )
-        })
-    }
-
-    fn key_to_string(&self, key: &str) -> String {
-        self[key].try_to_string().unwrap_or_else(|| {
-            exit!(
-                "Cannot parse `{}`, It should be 'string', but found:\n{:#?}",
-                key,
-                self[key]
-            )
-        })
-    }
-
-    fn key_to_multiple_string(&self, key: &str) -> Vec<String> {
-        is_none!(self[key], return vec![]);
-
-        let mut result = vec![];
-        match self[key].as_vec() {
-            Some(items) => {
-                for (i, item) in items.iter().enumerate() {
-                    let s = item.to_string(format!("{}[{}]", key, i));
-                    result.push(s);
-                }
-            }
-            None => {
-                for line in self.key_to_string(key).lines() {
-                    for s in line.split_whitespace() {
-                        result.push(s.to_string());
-                    }
-                }
-            }
-        }
-
-        dedup(result)
-    }
-}
-
-fn dedup<T: Eq>(vec: Vec<T>) -> Vec<T> {
-    let mut new = vec![];
-    for item in vec {
-        let has = new.iter().any(|s| s == &item);
-        if !has {
-            new.push(item);
-        }
-    }
-    new
-}
-
-pub trait ToAbsolutePath {
-    fn to_absolute_path<P: AsRef<Path>>(&self, root: P) -> PathBuf;
-}
-
-impl ToAbsolutePath for String {
-    fn to_absolute_path<P: AsRef<Path>>(&self, root: P) -> PathBuf {
-        let path = PathBuf::from(self);
-        if path.is_absolute() {
-            path
-        } else {
-            root.as_ref().join(self)
-        }
-    }
 }
 
 impl ServerConfig {
@@ -669,7 +312,7 @@ struct Parser {
 
 impl Parser {
     fn new(yaml: Yaml) -> Self {
-        Parser { yaml }
+        Self { yaml }
     }
 
     fn listen(&self) -> Vec<SocketAddr> {
@@ -820,7 +463,7 @@ impl Parser {
         setting_value!(self.yaml["rewrite"]);
         let val = self.yaml.key_to_string("rewrite");
 
-        Setting::Value(Rewrite::parse(val))
+        Setting::Value(Rewrite::from(val))
     }
 
     fn compress(&self) -> Setting<Compress> {
@@ -830,7 +473,7 @@ impl Parser {
         // compress: true
         if compress.as_bool().is_some() {
             return Setting::Value(Compress {
-                mode: ContentEncoding::Auto(default::COMPRESS_LEVEL),
+                mode: Encoding::Auto(default::COMPRESS_LEVEL),
                 extensions: default::COMPRESS_EXTENSIONS
                     .iter()
                     .map(|e| e.to_string())
@@ -849,9 +492,9 @@ impl Parser {
             level as u32
         });
 
-        let mode = is_none!(compress["mode"], ContentEncoding::Auto(level), {
+        let mode = is_none!(compress["mode"], Encoding::Auto(level), {
             let mode = compress.key_to_string("mode");
-            ContentEncoding::from(&mode, level)
+            Encoding::new(&mode, level)
         });
 
         let extensions = is_none!(

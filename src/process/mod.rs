@@ -1,3 +1,14 @@
+#[macro_export]
+macro_rules! exit {
+    ($($arg:tt)*) => {
+       {
+            eprint!("{}", "error: ".red().bold());
+            eprintln!($($arg)*);
+            std::process::exit(1)
+       }
+    };
+}
+
 #[derive(Debug)]
 pub enum ExitError {
     None,
@@ -5,7 +16,7 @@ pub enum ExitError {
 }
 
 #[cfg(unix)]
-pub fn exit(pid: i32) -> Result<(), ExitError> {
+pub fn kill(pid: i32) -> Result<(), ExitError> {
     if unsafe { libc::kill(pid, 0) } != 0 {
         return Err(ExitError::None);
     }
@@ -17,7 +28,7 @@ pub fn exit(pid: i32) -> Result<(), ExitError> {
 }
 
 #[cfg(windows)]
-pub fn exit(pid: i32) -> Result<(), ExitError> {
+pub fn kill(pid: i32) -> Result<(), ExitError> {
     use winapi::um::processthreadsapi::{OpenProcess, TerminateProcess};
 
     unsafe {

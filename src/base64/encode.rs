@@ -60,11 +60,11 @@ fn to_binary(mut n: u8) -> Vec<u8> {
 mod test {
 
     #[test]
-    fn test_to_decimal() {}
+    fn to_decimal() {}
 
     #[test]
     fn to_binary() {}
 
     #[test]
-    fn encode() {}
+    fn to_encode() {}
 }

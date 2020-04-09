@@ -1,20 +1,21 @@
 mod base64;
+mod compress;
 mod config;
 mod connector;
-mod default;
 mod directory;
-mod encoding;
 mod matcher;
 mod mime;
 mod process;
+mod util;
 mod var;
+mod yaml;
 
 use ace::App;
 use bright::Colorful;
-use config::{
-    ContentEncoding, Directory, ForceTo, Proxy, RewriteStatus, ServerConfig, Setting, SiteConfig,
-    StatusPage, ToAbsolutePath,
-};
+use compress::encoding::Encoding;
+use config::default;
+use config::{Directory, Proxy, RewriteStatus, ServerConfig, Setting, SiteConfig, StatusPage};
+use config::{ForceTo, GetExtension, ToAbsolutePath};
 use connector::Connector;
 use dirs;
 use futures::io;
@@ -47,20 +48,10 @@ use tokio::prelude::*;
 use tokio_rustls::server::TlsStream;
 use var::{ReplaceVar, Var};
 
-#[macro_export]
-macro_rules! exit {
-    ($($arg:tt)*) => {
-       {
-            eprint!("{}", "error: ".red().bold());
-            eprintln!($($arg)*);
-            std::process::exit(1)
-       }
-    };
-}
-
 #[tokio::main]
 async fn main() {
-    let mut app = App::new(default::SERVER_NAME, default::VERSION)
+    let mut app = App::new()
+        .config(default::SERVER_NAME, default::VERSION)
         .cmd("start", "Quick start in the current directory")
         .cmd("stop", "Stop the daemon")
         .cmd("restart", "Restart the service program")
@@ -91,13 +82,13 @@ async fn main() {
             }
             "restart" => exit!("Waiting for development"),
             "help" => {
-                return app.help();
+                return app.print_help();
             }
             "version" => {
-                return app.version();
+                return app.print_version();
             }
             _ => {
-                return app.error_try("help");
+                return app.print_error_try("help");
             }
         }
     }
@@ -200,7 +191,7 @@ fn stop_daemon() {
                 Err(_) => exit!("Cannot parse pid '{}'", pid),
             };
 
-            if let Err(err) = process::exit(pid) {
+            if let Err(err) = process::kill(pid) {
                 match err {
                     ExitError::None => exit!("Process does not exist"),
                     ExitError::Failure => exit!("Can't kill the process"),
@@ -538,8 +529,13 @@ async fn handle(req: Request<Body>, config: &mut SiteConfig) -> Response<Body> {
             if meta.is_dir() {
                 if req.uri().path().chars().last().unwrap_or('.') == '/' {
                     if let Setting::Value(option) = &config.directory {
-                        let html =
-                            directory::render_dir_html(&path, &req.uri().path(), option).await;
+                        let html = directory::render_dir_html(
+                            &path,
+                            &req.uri().path(),
+                            &option.time,
+                            option.size,
+                        )
+                        .await;
                         return match html {
                             Ok(html) => Response::builder()
                                 .header(CONTENT_TYPE, mime::TEXT_HTML)
@@ -652,19 +648,19 @@ fn merge_location(route: &str, config: &mut SiteConfig) {
         if let Some(root) = &item.root {
             config.root = root.clone();
         }
-        if item.echo.has_value() {
+        if !item.echo.is_none() {
             config.echo = item.echo.clone();
         }
-        if item.file.has_value() {
+        if !item.file.is_none() {
             config.file = item.file.clone();
         }
-        if item.index.has_value() {
+        if !item.index.is_none() {
             config.index = item.index.clone();
         }
-        if item.directory.has_value() {
+        if !item.directory.is_none() {
             config.directory = item.directory.clone();
         }
-        if item.headers.has_value() {
+        if !item.headers.is_none() {
             if let Setting::Value(header) = &item.headers {
                 let mut h = config.headers.clone().unwrap_or_default();
                 h.extend(header.clone());
@@ -673,34 +669,34 @@ fn merge_location(route: &str, config: &mut SiteConfig) {
                 config.headers = Setting::Off;
             }
         }
-        if item.rewrite.has_value() {
+        if !item.rewrite.is_none() {
             config.rewrite = item.rewrite.clone();
         }
-        if item.compress.has_value() {
+        if !item.compress.is_none() {
             config.compress = item.compress.clone();
         }
-        if item.methods.has_value() {
+        if !item.methods.is_none() {
             config.methods = item.methods.clone();
         }
-        if item.auth.has_value() {
+        if !item.auth.is_none() {
             config.auth = item.auth.clone();
         }
-        if item.extensions.has_value() {
+        if !item.extensions.is_none() {
             config.extensions = item.extensions.clone();
         }
-        if item.proxy.has_value() {
+        if !item.proxy.is_none() {
             config.proxy = item.proxy.clone();
         }
-        if item.status._403.has_value() {
+        if !item.status._403.is_none() {
             config.status._403 = item.status._403.clone();
         }
-        if item.status._404.has_value() {
+        if !item.status._404.is_none() {
             config.status._404 = item.status._404.clone();
         }
-        if item.status._500.has_value() {
+        if !item.status._500.is_none() {
             config.status._500 = item.status._500.clone();
         }
-        if item.status._502.has_value() {
+        if !item.status._502.is_none() {
             config.status._502 = item.status._502.clone();
         }
 
@@ -711,7 +707,7 @@ fn merge_location(route: &str, config: &mut SiteConfig) {
     config.location.clear();
 }
 
-fn compress(encoding: Option<&HeaderValue>, config: &SiteConfig, ext: &str) -> ContentEncoding {
+fn compress(encoding: Option<&HeaderValue>, config: &SiteConfig, ext: &str) -> Encoding {
     if let Setting::Value(compress) = &config.compress {
         if compress.extensions.iter().any(|item| *item == ext) {
             // gzip, deflate, br
@@ -722,7 +718,7 @@ fn compress(encoding: Option<&HeaderValue>, config: &SiteConfig, ext: &str) -> C
             }
         }
     }
-    ContentEncoding::None
+    Encoding::None
 }
 
 async fn output_error(
@@ -757,7 +753,7 @@ async fn file_response(
 ) -> Response<Body> {
     let encoding = ext
         .map(|ext| compress(header, config, ext))
-        .unwrap_or(ContentEncoding::None);
+        .unwrap_or(Encoding::None);
 
     let (mut sender, body) = Body::channel();
     let mime = ext
@@ -769,7 +765,7 @@ async fn file_response(
         .body(body)
         .unwrap();
 
-    if encoding == ContentEncoding::None {
+    if encoding == Encoding::None {
         if let Ok(meta) = file.metadata().await {
             res.headers_mut()
                 .insert(CONTENT_LENGTH, HeaderValue::from(meta.len()));
@@ -788,11 +784,11 @@ async fn file_response(
                         break;
                     }
                     let data = match &encoding {
-                        ContentEncoding::Gzip(level) => encoding::gzip(&buf[..len], *level).await,
-                        ContentEncoding::Deflate(level) => {
-                            encoding::deflate(&buf[..len], *level).await
+                        Encoding::Gzip(level) => compress::encode::gzip(&buf[..len], *level).await,
+                        Encoding::Deflate(level) => {
+                            compress::encode::deflate(&buf[..len], *level).await
                         }
-                        ContentEncoding::Br(level) => encoding::br(&buf[..len], *level).await,
+                        Encoding::Br(level) => compress::encode::br(&buf[..len], *level).await,
                         _ => Ok(buf[..len].to_vec()),
                     };
                     let data = match data {
@@ -809,21 +805,6 @@ async fn file_response(
     });
 
     res
-}
-
-trait GetExtension {
-    fn get_extension(&self) -> Option<&str>;
-}
-
-impl GetExtension for PathBuf {
-    fn get_extension(&self) -> Option<&str> {
-        if let Some(p) = self.extension() {
-            if let Some(p) = p.to_str() {
-                return Some(p);
-            }
-        }
-        None
-    }
 }
 
 async fn fallbacks(file: &PathBuf, exts: &Setting<Vec<String>>) -> Option<(File, String)> {

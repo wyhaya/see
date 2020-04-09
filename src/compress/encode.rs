@@ -26,3 +26,10 @@ pub async fn br(data: &[u8], level: u32) -> Result<Vec<u8>> {
 
     Ok(e.into_inner())
 }
+
+#[cfg(test)]
+mod test {
+
+    #[test]
+    fn test() {}
+}

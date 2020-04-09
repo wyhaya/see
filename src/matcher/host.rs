@@ -1,6 +1,5 @@
 use crate::config::ForceTo;
 use crate::matcher::{replace_match_keyword, WildcardMatcher, ANY_WORD, REGEX_WORD};
-use globset::GlobMatcher;
 use regex::Regex;
 
 // Match http header 'host'

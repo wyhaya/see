@@ -1,10 +1,10 @@
-use crate::config::Directory;
-use futures::StreamExt;
+use crate::util::bytes_to_size;
 use std::path::PathBuf;
 use std::time::UNIX_EPOCH;
 use time::Timespec;
 use tokio::fs;
 use tokio::io::Result;
+use tokio::stream::StreamExt;
 
 // HTML directory template
 const TEMPLATE: &str = r#"<!DOCTYPE html>
@@ -16,26 +16,35 @@ const TEMPLATE: &str = r#"<!DOCTYPE html>
     <style>
         body {
             font-family: "pingfang sc", "microsoft yahei", "Helvetica Neue";
-            padding: 0 24px 0;
+            padding: 0 16px 0;
+            margin: 0;
         }
         h1 {
             font-weight: normal;
             word-wrap: break-word;
         }
-        main{
+        main {
             display: grid;
             grid-template-columns: {columns};
         }
-        a:first-child{
+        a:first-child {
             grid-column: {column};
         }
-        a, time, span{
-            line-height: 20px;
-            word-wrap: break-word;
-            margin-top: 6px;
+        a, time, span {
+            height: 28px;
+            line-height: 28px;
+            text-overflow: ellipsis;
+            overflow: hidden;
+            white-space: nowrap;
         }
-        time, span{
-            padding-left: 20px;
+        time, span {
+            padding-left: 16px;
+        }
+        @media (prefers-color-scheme: dark) {
+            body {
+                background-color: #1e2022;
+                color: #d5d5d5;
+            }
         }
     </style>
 </head>
@@ -49,24 +58,13 @@ const TEMPLATE: &str = r#"<!DOCTYPE html>
 </html>
 "#;
 
-pub async fn render_dir_html(path: &PathBuf, title: &str, config: &Directory) -> Result<String> {
+pub async fn render_dir_html(
+    path: &PathBuf,
+    title: &str,
+    time: &Option<String>,
+    size: bool,
+) -> Result<String> {
     let mut dir = fs::read_dir(path).await?;
-
-    let (mut columns, mut column) = ("auto auto 1fr", "1 / 4");
-
-    if config.time.is_none() && !config.size {
-        columns = "auto";
-        column = "1 / 2";
-    } else if (config.time.is_none() && config.size) || (config.time.is_some() && !config.size) {
-        columns = "auto 1fr";
-        column = "1 / 3";
-    }
-
-    let template = TEMPLATE
-        .replacen("{title}", title, 2)
-        .replacen("{columns}", columns, 1)
-        .replacen("{column}", column, 1);
-
     let mut content = String::new();
 
     while let Some(entry) = dir.next().await {
@@ -86,10 +84,10 @@ pub async fn render_dir_html(path: &PathBuf, title: &str, config: &Directory) ->
             None => continue,
         };
 
-        if config.time.is_some() || config.size {
+        if time.is_some() || size {
             let meta = fs::metadata(&entry).await?;
 
-            if let Some(format) = &config.time {
+            if let Some(format) = &time {
                 let dur = meta.modified()?.duration_since(UNIX_EPOCH).unwrap();
                 let spec = Timespec::new(dur.as_secs() as i64, dur.subsec_nanos() as i32);
 
@@ -99,12 +97,9 @@ pub async fn render_dir_html(path: &PathBuf, title: &str, config: &Directory) ->
                 ));
             }
 
-            if config.size {
+            if size {
                 if entry.is_file() {
-                    content.push_str(&format!(
-                        "<span>{}</span>",
-                        bytes_to_size(meta.len() as f64)
-                    ));
+                    content.push_str(&format!("<span>{}</span>", bytes_to_size(meta.len())));
                 } else {
                     content.push_str("<span></span>");
                 }
@@ -112,15 +107,21 @@ pub async fn render_dir_html(path: &PathBuf, title: &str, config: &Directory) ->
         }
     }
 
-    Ok(template.replacen("{content}", &content, 1))
-}
+    let (mut columns, mut column) = ("auto auto 1fr", "1 / 4");
 
-fn bytes_to_size(bytes: f64) -> String {
-    let unit = 1024_f64;
-    let sizes = ["B", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB"];
-    if bytes <= 1_f64 {
-        return format!("{:.2} B", bytes);
+    if time.is_none() && !size {
+        columns = "auto";
+        column = "1 / 2";
+    } else if (time.is_none() && size) || (time.is_some() && !size) {
+        columns = "auto 1fr";
+        column = "1 / 3";
     }
-    let i = (bytes.ln() / unit.ln()) as i32;
-    format!("{:.2} {}", bytes / unit.powi(i), sizes[i as usize])
+
+    let template = TEMPLATE
+        .replacen("{title}", title, 2)
+        .replacen("{columns}", columns, 1)
+        .replacen("{column}", column, 1)
+        .replacen("{content}", &content, 1);
+
+    Ok(template)
 }
