@@ -3,6 +3,7 @@ mod compress;
 mod config;
 mod connector;
 mod directory;
+mod logger;
 mod matcher;
 mod mime;
 mod process;
@@ -112,7 +113,7 @@ async fn main() {
             }
         };
 
-        configs = ServerConfig::new(&config_path);
+        configs = ServerConfig::new(&config_path).await;
 
         // Check configuration file
         if app.value("-t").is_some() {
@@ -441,6 +442,10 @@ async fn handle(req: Request<Body>, config: &mut SiteConfig) -> Response<Body> {
         merge_location(req.uri().path(), config);
     }
 
+    if let Setting::Value(log) = &mut config.log {
+        log.logger.write(req.uri().path()).await;
+    }
+
     // HTTP auth
     if let Setting::Value(auth) = &config.auth {
         let authorization = req.headers().get(AUTHORIZATION);
@@ -686,6 +691,9 @@ fn merge_location(route: &str, config: &mut SiteConfig) {
         }
         if !item.proxy.is_none() {
             config.proxy = item.proxy.clone();
+        }
+        if !item.proxy.is_none() {
+            config.log = item.log.clone();
         }
         if !item.status._403.is_none() {
             config.status._403 = item.status._403.clone();

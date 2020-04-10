@@ -36,6 +36,8 @@ pub const TIMEOUT: u64 = 5000;
 
 pub const PROXY_TIMEOUT: Duration = Duration::from_millis(5000);
 
+pub const LOG_FORMAT: &str = "";
+
 // Quick start
 
 pub const START_PORT: i64 = 80;
@@ -62,6 +64,7 @@ pub fn quick_start_config(root: PathBuf, addr: SocketAddr) -> ServerConfig {
             extensions: Setting::None,
             status: StatusPage::default(),
             proxy: Setting::None,
+            log: Setting::None,
             location: Vec::with_capacity(0),
         }],
     }

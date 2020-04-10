@@ -1,6 +1,7 @@
 use crate::compress::encoding::Encoding;
 use crate::config::default;
 use crate::config::ForceTo;
+use crate::logger::Logger;
 use crate::util::*;
 use crate::var::{ToVar, Var};
 use crate::yaml::YamlExtend;
@@ -79,6 +80,7 @@ pub struct SiteConfig {
     pub extensions: Setting<Vec<String>>,
     pub status: StatusPage,
     pub proxy: Setting<Proxy>,
+    pub log: Setting<Log>,
     pub location: Vec<Location>,
 }
 
@@ -99,6 +101,7 @@ pub struct Location {
     pub extensions: Setting<Vec<String>>,
     pub status: StatusPage,
     pub proxy: Setting<Proxy>,
+    pub log: Setting<Log>,
 }
 
 #[derive(Clone)]
@@ -148,10 +151,7 @@ impl From<String> for Rewrite {
             .next()
             .unwrap_or_else(|| exit!("Could not find redirected url"));
 
-        let status = split
-            .next()
-            .map(RewriteStatus::from)
-            .unwrap_or_default();
+        let status = split.next().map(RewriteStatus::from).unwrap_or_default();
 
         let val = location
             .to_string()
@@ -187,6 +187,12 @@ pub struct Proxy {
     pub headers: Setting<HeaderMap>,
 }
 
+#[derive(Debug, Clone)]
+pub struct Log {
+    pub logger: Logger,
+    pub format: String,
+}
+
 macro_rules! setting_value {
     ($yaml: expr) => {
         setting_none!($yaml);
@@ -218,7 +224,7 @@ macro_rules! setting_off {
 }
 
 impl ServerConfig {
-    pub fn new(path: &str) -> Vec<Self> {
+    pub async fn new(path: &str) -> Vec<Self> {
         let parent = Path::new(&path)
             .parent()
             .unwrap_or_else(|| exit!("Cannot get configuration file directory"));
@@ -260,6 +266,7 @@ impl ServerConfig {
                     "extension",
                     "status",
                     "proxy",
+                    "log",
                     "location",
                 ],
                 &["listen", "root"],
@@ -284,8 +291,9 @@ impl ServerConfig {
                 methods: parser.methods(true),
                 status: parser.status(&root),
                 proxy: parser.proxy(),
+                log: parser.log(&root).await,
                 auth: parser.auth(),
-                location: parser.location(root.clone()),
+                location: parser.location(root.clone()).await,
             };
 
             for listen in listens {
@@ -608,7 +616,51 @@ impl Parser {
         })
     }
 
-    fn location(&self, parent: PathBuf) -> Vec<Location> {
+    async fn log(&self, root: &PathBuf) -> Setting<Log> {
+        let log = &self.yaml["log"];
+        setting_value!(log);
+
+        if let Some(path) = log.try_to_string() {
+            let logger = Logger::new()
+                .file(path.to_absolute_path(root))
+                .await
+                .unwrap_or_else(|err| exit!("Init logger failed:\n{:?}", err));
+            return Setting::Value(Log {
+                logger,
+                format: default::LOG_FORMAT.to_string(),
+            });
+        }
+
+        self.yaml.check("log", &["mode", "file", "format"], &[]);
+
+        let fotmat = is_none!(
+            log["format"],
+            default::LOG_FORMAT.to_string(),
+            log.key_to_string("format")
+        );
+        let mode = log.key_to_string("mode");
+
+        match mode.as_ref() {
+            "stdout" => Setting::Value(Log {
+                format: fotmat,
+                logger: Logger::new().stdout(),
+            }),
+            "file" => {
+                let path = log.key_to_string("file");
+                let logger = Logger::new()
+                    .file(path.to_absolute_path(root))
+                    .await
+                    .unwrap_or_else(|err| exit!("Init logger failed:\n{:?}", err));
+                Setting::Value(Log {
+                    format: fotmat,
+                    logger,
+                })
+            }
+            _ => exit!("Error log mode"),
+        }
+    }
+
+    async fn location(&self, parent: PathBuf) -> Vec<Location> {
         is_none!(self.yaml["location"], return vec![]);
 
         let hash = self.yaml.key_to_hash("location");
@@ -634,6 +686,7 @@ impl Parser {
                     "extension",
                     "status",
                     "proxy",
+                    "log",
                 ],
                 &[],
             );
@@ -663,6 +716,7 @@ impl Parser {
                 extensions: parser.extensions(),
                 status: parser.status(&root),
                 proxy: parser.proxy(),
+                log: parser.log(&root).await,
             });
         }
         vec

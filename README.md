@@ -27,25 +27,6 @@ see
 see -c /your/config.yml
 ```
 
-More
-
-```
-USAGE:
-    see [OPTIONS] [FLAGS] [--] ...
-
-FLAGS:
-    -d, detach          Running in the background
-    -h, help            Print help information
-    -r, restart         Restart the service program
-    -s, stop            Stop the daemon
-    -t, test            Test the config file for error
-    -v, version         Print version number
-
-OPTIONS:
-    -c    <FILE>        Specify a configuration file
-    start <PORT?>       Quick Start
-```
-
 ## Config
 
 Use `yaml` format as a configuration file, You can use `see -c /your/config.yml` to specify the configuration file location.
@@ -84,6 +65,7 @@ A simple example:
 * [extension](#extension)
 * [status](#status)
 * [proxy](#proxy)
+* [log](#log)
 * [location](#location)
 * [var](#var)
 
@@ -276,6 +258,21 @@ proxy:                     # Rand proxy
     - http://example1.com
     - http://example2.com
 
+```
+
+### log
+
+Access log
+
+```yaml
+log: /var/log/www.log
+# or
+log:
+  mode: stdout  # stdout | file
+# or
+log:
+  file: /var/log/www.log
+  format: ${request_path} ${header_host}
 ```
 
 ### location
