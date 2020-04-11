@@ -1,6 +1,7 @@
 mod base64;
 mod compress;
 mod config;
+mod connect;
 mod connector;
 mod directory;
 mod logger;
@@ -17,6 +18,7 @@ use compress::encoding::Encoding;
 use config::default;
 use config::{Directory, Proxy, RewriteStatus, ServerConfig, Setting, SiteConfig, StatusPage};
 use config::{ForceTo, GetExtension, ToAbsolutePath};
+use connect::Connect;
 use connector::Connector;
 use dirs;
 use futures::io;
@@ -205,122 +207,108 @@ fn stop_daemon() {
     }
 }
 
-enum Req {
-    Stream(TcpStream, Vec<SiteConfig>),
-    TlsStream(TlsStream<TcpStream>, Vec<SiteConfig>),
-}
-
-impl AsyncRead for Req {
-    fn poll_read(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &mut [u8],
-    ) -> Poll<io::Result<usize>> {
-        match self.get_mut() {
-            Req::Stream(stream, _) => Pin::new(stream).poll_read(cx, buf),
-            Req::TlsStream(stream, _) => Pin::new(stream).poll_read(cx, buf),
-        }
-    }
-}
-
-impl AsyncWrite for Req {
-    fn poll_write(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &[u8],
-    ) -> Poll<io::Result<usize>> {
-        match self.get_mut() {
-            Req::Stream(stream, _) => Pin::new(stream).poll_write(cx, buf),
-            Req::TlsStream(stream, _) => Pin::new(stream).poll_write(cx, buf),
-        }
-    }
-
-    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        match self.get_mut() {
-            Req::Stream(stream, _) => Pin::new(stream).poll_flush(cx),
-            Req::TlsStream(stream, _) => Pin::new(stream).poll_flush(cx),
-        }
-    }
-
-    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        match self.get_mut() {
-            Req::Stream(stream, _) => Pin::new(stream).poll_shutdown(cx),
-            Req::TlsStream(stream, _) => Pin::new(stream).poll_shutdown(cx),
-        }
-    }
-}
-
 async fn bind_tcp(configs: Vec<ServerConfig>) {
-    //    let mut servers = vec![];
+    let mut servers = Vec::with_capacity(configs.len());
 
     for config in configs {
         let listen = &config.listen;
+        let listener = TcpListener::bind(listen).await
+            .unwrap_or_else(|err| {
+                exit!("Cannot bind to address: {}\n{:?}", listen, err)
+            });
 
-        let mut listener = match TcpListener::bind(listen).await {
-            Ok(listener) => listener,
-            Err(err) => exit!("Cannot bind to address: {}\n{:?}", listen, err),
-        };
-
-        let stream = listener.incoming().filter_map(|stream| {
-            let config = config.clone();
-            async move {
-                let mut stream = match stream {
-                    Ok(s) => s,
-                    Err(_) => return None,
-                };
-
-                let has_https = config.sites.iter().any(|item| item.https.is_some());
-                if !has_https {
-                    return Some(Ok::<_, hyper::Error>(Req::Stream(stream, config.sites)));
-                }
-                let mut buf = [0; 1];
-                let is_https = match stream.peek(&mut buf).await {
-                    Ok(_) => buf[0] == 22,
-                    Err(_) => return None,
-                };
-                if is_https {
-                    // bug
-                    let configs = config
-                        .sites
-                        .iter()
-                        .filter(|item| item.https.is_some())
-                        .cloned()
-                        .collect::<Vec<SiteConfig>>();
-                    let config = configs[0].clone();
-                    let tls = config.https.as_ref().unwrap();
-                    // can accept
-                    if let Ok(stream) = tls.acceptor.accept(stream).await {
-                        return Some(Ok::<_, hyper::Error>(Req::TlsStream(stream, configs)));
-                    }
-                } else {
-                    let mut s = vec![];
-                    for item in config.sites {
-                        if item.https.is_none() {
-                            s.push(item);
-                        }
-                    }
-                    return Some(Ok::<_, hyper::Error>(Req::Stream(stream, s)));
-                }
-                None
-            }
-        });
-
-        let http = Http::new();
-
-        let service = make_service_fn(|req: &Req| {
-            let config = match req {
-                Req::Stream(_, c) => c.clone(),
-                Req::TlsStream(_, c) => c.clone(),
-            };
-            async { Ok::<_, Infallible>(service_fn(move |req| connect(req, config.clone()))) }
-        });
-
-        let server = hyper::server::Builder::new(from_stream(stream), http)
-            .serve(service)
-            .await;
-
-        //        servers.push(server);
+        servers.push(run_server(listener, config));
     }
+
+    futures::future::join_all(servers).await;
+}
+
+async fn run_server(mut tcp: TcpListener, config: ServerConfig) {
+    //
+    // let stream = listener.incoming().filter_map(|stream| {
+    //     let config = config.clone();
+    //     async move {
+    //         let mut stream = match stream {
+    //             Ok(s) => s,
+    //             Err(_) => return None,
+    //         };
+    //
+    //         let has_https = config.sites.iter().any(|item| item.https.is_some());
+    //         if !has_https {
+    //             return Some(Ok::<_, hyper::Error>(Req::Stream(stream, config.sites)));
+    //         }
+    //         let mut buf = [0; 1];
+    //         let is_https = match stream.peek(&mut buf).await {
+    //             Ok(_) => buf[0] == 22,
+    //             Err(_) => return None,
+    //         };
+    //         if is_https {
+    //             // bug
+    //             let configs = config
+    //                 .sites
+    //                 .iter()
+    //                 .filter(|item| item.https.is_some())
+    //                 .cloned()
+    //                 .collect::<Vec<SiteConfig>>();
+    //             let config = configs[0].clone();
+    //             let tls = config.https.as_ref().unwrap();
+    //             // can accept
+    //             if let Ok(stream) = tls.acceptor.accept(stream).await {
+    //                 return Some(Ok::<_, hyper::Error>(Req::TlsStream(stream, configs)));
+    //             }
+    //         } else {
+    //             let mut s = vec![];
+    //             for item in config.sites {
+    //                 if item.https.is_none() {
+    //                     s.push(item);
+    //                 }
+    //             }
+    //             return Some(Ok::<_, hyper::Error>(Req::Stream(stream, s)));
+    //         }
+    //         None
+    //     }
+    // });
+    //
+    // let http = Http::new();
+    //
+    // let service = make_service_fn(|req: &Req| {
+    //     let config = match req {
+    //         Req::Stream(_, c) => c.clone(),
+    //         Req::TlsStream(_, c) => c.clone(),
+    //     };
+    //     async { Ok::<_, Infallible>(service_fn(move |req| connect(req, config.clone()))) }
+    // });
+    //
+    // let server = hyper::server::Builder::new(from_stream(stream), http)
+    //     .serve(service)
+    //     .await;
+
+    //        servers.push(server);
+
+    let stream = tcp.incoming().filter_map(|stream| {
+        let config = config.clone();
+        async move {
+            let mut stream = match stream {
+                Ok(s) => s,
+                Err(_) => return None,
+            };
+            return Some(Ok::<_, hyper::Error>(Connect::Stream(stream, config.sites)));
+        }
+    });
+
+    let service = make_service_fn(|req: &Connect| {
+        let config = match req {
+            Connect::Stream(_, c) => c.clone(),
+            Connect::TlsStream(_, c) => c.clone(),
+        };
+        async { Ok::<_, Infallible>(service_fn(move |req| connect(req, config.clone()))) }
+    });
+
+    let http = Http::new();
+
+    hyper::server::Builder::new(from_stream(stream), http)
+        .serve(service)
+        .await;
 }
 
 trait BuilderFromStatus {
