@@ -66,6 +66,7 @@ A simple example:
 * [status](#status)
 * [proxy](#proxy)
 * [log](#log)
+* [ip](#ip)
 * [location](#location)
 * [var](#var)
 
@@ -273,6 +274,19 @@ log:
 log:
   file: /var/log/www.log
   format: ${request_path} ${header_host}
+```
+
+### ip
+
+Allow and deny clients from specified IP
+
+```yaml
+ip:
+  allow:
+    - 127.0.0.1
+    - 192.168.0.*
+  deny:
+    - 172.17.*.*
 ```
 
 ### location

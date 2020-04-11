@@ -36,8 +36,7 @@ impl HostMatcher {
             }
 
             // Use wildcard match: *.example.com
-            let has_wildcard = item.chars().any(|ch| ch == ANY_WORD);
-            if has_wildcard {
+            if item.contains(ANY_WORD) {
                 let wildcard = MatchMode::Wildcard(WildcardMatcher::new(&item));
                 modes.push(wildcard);
                 continue;

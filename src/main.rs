@@ -446,6 +446,13 @@ async fn handle(req: Request<Body>, config: &mut SiteConfig) -> Response<Body> {
         log.logger.write(req.uri().path()).await;
     }
 
+    if let Setting::Value(ip) = &config.ip {
+        // if !ip.is_pass() {
+        //     // 403
+        //     return
+        // }
+    }
+
     // HTTP auth
     if let Setting::Value(auth) = &config.auth {
         let authorization = req.headers().get(AUTHORIZATION);
@@ -692,8 +699,11 @@ fn merge_location(route: &str, config: &mut SiteConfig) {
         if !item.proxy.is_none() {
             config.proxy = item.proxy.clone();
         }
-        if !item.proxy.is_none() {
+        if !item.log.is_none() {
             config.log = item.log.clone();
+        }
+        if !item.ip.is_none() {
+            config.ip = item.ip.clone();
         }
         if !item.status._403.is_none() {
             config.status._403 = item.status._403.clone();

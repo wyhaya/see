@@ -8,7 +8,7 @@ use crate::yaml::YamlExtend;
 use crate::*;
 use base64::encode;
 use hyper::{Method, Uri};
-use matcher::{HostMatcher, LocationMatcher};
+use matcher::{HostMatcher, IpMatcher, LocationMatcher};
 use std::fs;
 use std::io::BufReader;
 use std::path::Path;
@@ -81,6 +81,7 @@ pub struct SiteConfig {
     pub status: StatusPage,
     pub proxy: Setting<Proxy>,
     pub log: Setting<Log>,
+    pub ip: Setting<IpMatcher>,
     pub location: Vec<Location>,
 }
 
@@ -102,6 +103,7 @@ pub struct Location {
     pub status: StatusPage,
     pub proxy: Setting<Proxy>,
     pub log: Setting<Log>,
+    pub ip: Setting<IpMatcher>,
 }
 
 #[derive(Clone)]
@@ -267,6 +269,7 @@ impl ServerConfig {
                     "status",
                     "proxy",
                     "log",
+                    "ip",
                     "location",
                 ],
                 &["listen", "root"],
@@ -292,6 +295,7 @@ impl ServerConfig {
                 status: parser.status(&root),
                 proxy: parser.proxy(),
                 log: parser.log(&root).await,
+                ip: parser.ip(),
                 auth: parser.auth(),
                 location: parser.location(root.clone()).await,
             };
@@ -660,6 +664,17 @@ impl Parser {
         }
     }
 
+    fn ip(&self) -> Setting<IpMatcher> {
+        let ip = &self.yaml["ip"];
+        setting_value!(ip);
+        self.yaml.check("ip", &["allow", "deny"], &[]);
+
+        Setting::Value(IpMatcher::new(
+            ip.key_to_multiple_string("allow"),
+            ip.key_to_multiple_string("deny"),
+        ))
+    }
+
     async fn location(&self, parent: PathBuf) -> Vec<Location> {
         is_none!(self.yaml["location"], return vec![]);
 
@@ -687,6 +702,7 @@ impl Parser {
                     "status",
                     "proxy",
                     "log",
+                    "ip",
                 ],
                 &[],
             );
@@ -717,6 +733,7 @@ impl Parser {
                 status: parser.status(&root),
                 proxy: parser.proxy(),
                 log: parser.log(&root).await,
+                ip: parser.ip(),
             });
         }
         vec
