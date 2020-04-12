@@ -1,3 +1,4 @@
+mod accept;
 mod base64;
 mod compress;
 mod config;
@@ -18,38 +19,25 @@ use compress::encoding::Encoding;
 use config::default;
 use config::{Directory, Proxy, RewriteStatus, ServerConfig, Setting, SiteConfig, StatusPage};
 use config::{ForceTo, GetExtension, ToAbsolutePath};
-use connect::Connect;
 use connector::Connector;
-use dirs;
-use futures::io;
-use futures::StreamExt;
 use hyper::body::Bytes;
 use hyper::header::{
     HeaderName, HeaderValue, ACCEPT_ENCODING, ALLOW, AUTHORIZATION, CONTENT_ENCODING,
     CONTENT_LENGTH, CONTENT_TYPE, HOST, LOCATION, SERVER, WWW_AUTHENTICATE,
 };
 use hyper::http::response::Builder;
-use hyper::server::accept::from_stream;
-use hyper::server::conn::Http;
-use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Client, HeaderMap, Method, Request, Response, StatusCode, Uri, Version};
 use lazy_static::lazy_static;
 use matcher::HostMatcher;
-use process::ExitError;
-use rand::prelude::*;
+use mime::HeaderValueExtend;
+use process::{start_daemon, stop_daemon};
 use regex::Regex;
-use std::convert::Infallible;
-use std::env;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
-use std::pin::Pin;
-use std::process::Command;
-use std::task::{Context, Poll};
 use tokio::fs::{self, File};
-use tokio::net::{TcpListener, TcpStream};
+use tokio::net::TcpListener;
 use tokio::prelude::*;
-use tokio_rustls::server::TlsStream;
-use var::{ReplaceVar, Var};
+use var::ReplaceVar;
 
 #[tokio::main]
 async fn main() {
@@ -75,10 +63,7 @@ async fn main() {
                     false => arg[0].clone(),
                 };
                 let addr = listen.as_str().to_socket_addr();
-                let root = env::current_dir()
-                    .unwrap_or_else(|err| exit!("Can't get working directory\n{:?}", err));
-
-                configs = vec![default::quick_start_config(root, addr)];
+                configs = vec![default::quick_start_config(util::current_dir(), addr)];
             }
             "stop" => {
                 return stop_daemon();
@@ -105,9 +90,7 @@ async fn main() {
                 values[0].clone()
             }
             None => {
-                let config = home_dir()
-                    .join(default::CONFIG_PATH[0])
-                    .join(default::CONFIG_PATH[1]);
+                let config = util::config_path();
                 if let Some(p) = config.parent() {
                     let _ = std::fs::create_dir_all(p);
                 }
@@ -134,13 +117,6 @@ async fn main() {
     bind_tcp(configs).await;
 }
 
-fn home_dir() -> PathBuf {
-    match dirs::home_dir() {
-        Some(home) => home,
-        None => exit!("Can't get home directory"),
-    }
-}
-
 fn quick_start_info(listen: SocketAddr, path: PathBuf) {
     println!(
         "Serving path   : {}",
@@ -156,159 +132,18 @@ fn quick_start_info(listen: SocketAddr, path: PathBuf) {
     );
 }
 
-fn start_daemon(detach: &str) {
-    use std::fs;
-    let args = env::args().collect::<Vec<String>>();
-    let cmd = args
-        .iter()
-        .filter(|item| item != &detach)
-        .cloned()
-        .collect::<Vec<String>>();
-
-    let child = Command::new(&cmd[0]).args(&cmd[1..]).spawn();
-    match child {
-        Ok(child) => {
-            use std::io::Write;
-            let home = home_dir();
-            let _ = fs::create_dir_all(home.join(default::PID_PATH[0]));
-            let p = home.join(default::PID_PATH[0]).join(default::PID_PATH[1]);
-            let mut pid = fs::File::create(p).unwrap();
-            write!(pid, "{}", child.id()).unwrap();
-        }
-        Err(err) => exit!("Failed to run in the background\n{:?}", err),
-    }
-}
-
-fn stop_daemon() {
-    let pid_path = home_dir()
-        .join(default::PID_PATH[0])
-        .join(default::PID_PATH[1]);
-    match std::fs::read_to_string(&pid_path) {
-        Ok(pid) => {
-            if let Err(err) = std::fs::remove_file(&pid_path) {
-                exit!("Cannot delete pid file\n{:?}", err)
-            }
-
-            let pid = match pid.parse::<i32>() {
-                Ok(pid) => pid,
-                Err(_) => exit!("Cannot parse pid '{}'", pid),
-            };
-
-            if let Err(err) = process::kill(pid) {
-                match err {
-                    ExitError::None => exit!("Process does not exist"),
-                    ExitError::Failure => exit!("Can't kill the process"),
-                }
-            }
-        }
-        Err(e) => {
-            exit!("Open {:?} failed\n{:?}", pid_path, e);
-        }
-    }
-}
-
 async fn bind_tcp(configs: Vec<ServerConfig>) {
     let mut servers = Vec::with_capacity(configs.len());
 
     for config in configs {
-        let listen = &config.listen;
-        let listener = TcpListener::bind(listen).await
-            .unwrap_or_else(|err| {
-                exit!("Cannot bind to address: {}\n{:?}", listen, err)
-            });
+        let listener = TcpListener::bind(&config.listen)
+            .await
+            .unwrap_or_else(|err| exit!("Cannot bind to address: {}\n{:?}", &config.listen, err));
 
-        servers.push(run_server(listener, config));
+        servers.push(accept::run(listener, config));
     }
 
     futures::future::join_all(servers).await;
-}
-
-async fn run_server(mut tcp: TcpListener, config: ServerConfig) {
-    //
-    // let stream = listener.incoming().filter_map(|stream| {
-    //     let config = config.clone();
-    //     async move {
-    //         let mut stream = match stream {
-    //             Ok(s) => s,
-    //             Err(_) => return None,
-    //         };
-    //
-    //         let has_https = config.sites.iter().any(|item| item.https.is_some());
-    //         if !has_https {
-    //             return Some(Ok::<_, hyper::Error>(Req::Stream(stream, config.sites)));
-    //         }
-    //         let mut buf = [0; 1];
-    //         let is_https = match stream.peek(&mut buf).await {
-    //             Ok(_) => buf[0] == 22,
-    //             Err(_) => return None,
-    //         };
-    //         if is_https {
-    //             // bug
-    //             let configs = config
-    //                 .sites
-    //                 .iter()
-    //                 .filter(|item| item.https.is_some())
-    //                 .cloned()
-    //                 .collect::<Vec<SiteConfig>>();
-    //             let config = configs[0].clone();
-    //             let tls = config.https.as_ref().unwrap();
-    //             // can accept
-    //             if let Ok(stream) = tls.acceptor.accept(stream).await {
-    //                 return Some(Ok::<_, hyper::Error>(Req::TlsStream(stream, configs)));
-    //             }
-    //         } else {
-    //             let mut s = vec![];
-    //             for item in config.sites {
-    //                 if item.https.is_none() {
-    //                     s.push(item);
-    //                 }
-    //             }
-    //             return Some(Ok::<_, hyper::Error>(Req::Stream(stream, s)));
-    //         }
-    //         None
-    //     }
-    // });
-    //
-    // let http = Http::new();
-    //
-    // let service = make_service_fn(|req: &Req| {
-    //     let config = match req {
-    //         Req::Stream(_, c) => c.clone(),
-    //         Req::TlsStream(_, c) => c.clone(),
-    //     };
-    //     async { Ok::<_, Infallible>(service_fn(move |req| connect(req, config.clone()))) }
-    // });
-    //
-    // let server = hyper::server::Builder::new(from_stream(stream), http)
-    //     .serve(service)
-    //     .await;
-
-    //        servers.push(server);
-
-    let stream = tcp.incoming().filter_map(|stream| {
-        let config = config.clone();
-        async move {
-            let mut stream = match stream {
-                Ok(s) => s,
-                Err(_) => return None,
-            };
-            return Some(Ok::<_, hyper::Error>(Connect::Stream(stream, config.sites)));
-        }
-    });
-
-    let service = make_service_fn(|req: &Connect| {
-        let config = match req {
-            Connect::Stream(_, c) => c.clone(),
-            Connect::TlsStream(_, c) => c.clone(),
-        };
-        async { Ok::<_, Infallible>(service_fn(move |req| connect(req, config.clone()))) }
-    });
-
-    let http = Http::new();
-
-    hyper::server::Builder::new(from_stream(stream), http)
-        .serve(service)
-        .await;
 }
 
 trait BuilderFromStatus {
@@ -323,7 +158,7 @@ impl BuilderFromStatus for Builder {
     }
 }
 
-async fn connect(
+pub async fn connect(
     req: hyper::Request<Body>,
     configs: Vec<SiteConfig>,
 ) -> hyper::Result<Response<Body>> {
@@ -387,19 +222,10 @@ impl AppendHeaders for Response<Body> {
     }
 }
 
-fn rand_uri(uri: Vec<Var<Uri>>) -> Var<Uri> {
-    if uri.len() == 1 {
-        return uri[0].clone();
-    } else {
-        let i = rand::thread_rng().gen_range(0, uri.len());
-        return uri[i].clone();
-    }
-}
-
 async fn proxy_response(mut req: Request<Body>, c: Proxy, config: &SiteConfig) -> Response<Body> {
     let encoding = req.headers().get(ACCEPT_ENCODING).map(|d| d.clone());
 
-    let uri = rand_uri(c.uri).unwrap_or_else(|s, r| {
+    let uri = util::rand(c.uri).unwrap_or_else(|s, r| {
         let result = s.as_str().replace_var(&r, &req);
         result.parse::<Uri>().unwrap()
     });
@@ -762,9 +588,9 @@ async fn file_response(
         .unwrap_or(Encoding::None);
 
     let (mut sender, body) = Body::channel();
-    let mime = ext
-        .map(|e| mime::from_extension(e))
-        .unwrap_or(mime::DEFAULT);
+
+    let mime = HeaderValue::from_extension(ext.unwrap_or_default());
+
     let mut res = Response::builder()
         .status(status)
         .header(CONTENT_TYPE, mime)

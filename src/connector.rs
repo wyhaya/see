@@ -87,7 +87,7 @@ where
 
                     Ok(Stream::Https(tls))
                 }
-                    .boxed()
+                .boxed()
             }
             None => {
                 let connecting = self.http.call(dst);
@@ -95,7 +95,7 @@ where
                     let stream = connecting.await.map_err(Into::into)?;
                     Ok(Stream::Http(stream))
                 }
-                    .boxed()
+                .boxed()
             }
         }
     }

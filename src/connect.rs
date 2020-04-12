@@ -1,4 +1,4 @@
-use crate::config::{ServerConfig, SiteConfig};
+use crate::config::SiteConfig;
 use std::pin::Pin;
 use std::task::Context;
 use std::task::Poll;

@@ -1,5 +1,37 @@
+use crate::*;
+use dirs;
+use rand::prelude::*;
+use std::env;
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::time::Duration;
+
+pub fn current_dir() -> PathBuf {
+    env::current_dir().unwrap_or_else(|err| exit!("Can't get working directory\n{:?}", err))
+}
+
+pub fn home_dir() -> PathBuf {
+    match dirs::home_dir() {
+        Some(home) => home,
+        None => exit!("Can't get home directory"),
+    }
+}
+
+pub fn config_dir() -> PathBuf {
+    home_dir().join(default::CONFIG_PATH[0])
+}
+
+pub fn config_path() -> PathBuf {
+    home_dir()
+        .join(default::CONFIG_PATH[0])
+        .join(default::CONFIG_PATH[1])
+}
+
+pub fn pid_path() -> PathBuf {
+    home_dir()
+        .join(default::PID_PATH[0])
+        .join(default::PID_PATH[1])
+}
 
 pub fn dedup<T: Eq>(vec: Vec<T>) -> Vec<T> {
     let mut new = vec![];
@@ -9,6 +41,15 @@ pub fn dedup<T: Eq>(vec: Vec<T>) -> Vec<T> {
         }
     }
     new
+}
+
+pub fn rand<T: Clone>(vec: Vec<T>) -> T {
+    if vec.len() == 1 {
+        return vec[0].clone();
+    } else {
+        let i = rand::thread_rng().gen_range(0, vec.len());
+        return vec[i].clone();
+    }
 }
 
 #[derive(Debug)]
