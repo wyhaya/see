@@ -1,38 +1,70 @@
 use crate::config::ServerConfig;
 use crate::connect;
 use crate::connect::Connect;
-use futures::StreamExt;
+use futures::{Stream, StreamExt};
 use hyper::server::accept::from_stream;
 use hyper::server::conn::Http;
+use hyper::server::Builder;
 use hyper::service::{make_service_fn, service_fn};
 use std::convert::Infallible;
-use tokio::net::TcpListener;
+use std::net::IpAddr;
+use std::pin::Pin;
+use std::task::{Context, Poll};
+use tokio::io;
+use tokio::net::{TcpListener, TcpStream};
 
-pub async fn run(mut tcp: TcpListener, config: ServerConfig) {
-    let stream = tcp.incoming().filter_map(|stream| {
+pub async fn run(tcp: TcpListener, config: ServerConfig) {
+    let stream = AcceptStream::new(tcp).filter_map(|res| {
         let config = config.clone();
+
         async move {
-            let stream = match stream {
-                Ok(s) => s,
-                Err(_) => return None,
-            };
-            return Some(Ok::<_, hyper::Error>(Connect::Stream(stream, config.sites)));
+            let (stream, ip) = if let Ok(res) = res { res } else { return None };
+
+            return Some(Ok::<_, hyper::Error>(Connect::Stream(
+                stream,
+                ip,
+                config.sites,
+            )));
         }
     });
 
     let service = make_service_fn(|req: &Connect| {
-        let config = match req {
-            Connect::Stream(_, c) => c.clone(),
-            Connect::TlsStream(_, c) => c.clone(),
+        let (ip, configs) = match req {
+            Connect::Stream(_, i, c) => (*i, c.clone()),
+            Connect::TlsStream(_, i, c) => (*i, c.clone()),
         };
-        async { Ok::<_, Infallible>(service_fn(move |req| connect(req, config.clone()))) }
+
+        async move { Ok::<_, Infallible>(service_fn(move |req| connect(req, ip, configs.clone()))) }
     });
 
     let http = Http::new();
 
-    hyper::server::Builder::new(from_stream(stream), http)
-        .serve(service)
-        .await;
+    let _ = Builder::new(from_stream(stream), http).serve(service).await;
+}
+
+struct AcceptStream {
+    listener: TcpListener,
+}
+
+impl AcceptStream {
+    fn new(tcp: TcpListener) -> Self {
+        Self { listener: tcp }
+    }
+}
+
+impl Stream for AcceptStream {
+    type Item = io::Result<(TcpStream, IpAddr)>;
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let poll = self.get_mut().listener.poll_accept(cx);
+
+        match poll {
+            Poll::Ready(res) => {
+                let res = res.map(|(stream, addr)| (stream, addr.ip()));
+                Poll::Ready(Some(res))
+            }
+            Poll::Pending => Poll::Pending,
+        }
+    }
 }
 
 // async fn run_server(mut tcp: TcpListener, config: ServerConfig) {
@@ -80,21 +112,4 @@ pub async fn run(mut tcp: TcpListener, config: ServerConfig) {
 //         None
 //     }
 // });
-//
-// let http = Http::new();
-//
-// let service = make_service_fn(|req: &Req| {
-//     let config = match req {
-//         Req::Stream(_, c) => c.clone(),
-//         Req::TlsStream(_, c) => c.clone(),
-//     };
-//     async { Ok::<_, Infallible>(service_fn(move |req| connect(req, config.clone()))) }
-// });
-//
-// let server = hyper::server::Builder::new(from_stream(stream), http)
-//     .serve(service)
-//     .await;
-
-//        servers.push(server);
-
 // }

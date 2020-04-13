@@ -1,6 +1,6 @@
 use crate::*;
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum Encoding {
     Auto(u32),
     Gzip(u32),

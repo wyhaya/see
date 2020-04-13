@@ -5,6 +5,7 @@ mod config;
 mod connect;
 mod connector;
 mod directory;
+mod file;
 mod logger;
 mod matcher;
 mod mime;
@@ -20,6 +21,7 @@ use config::default;
 use config::{Directory, Proxy, RewriteStatus, ServerConfig, Setting, SiteConfig, StatusPage};
 use config::{ForceTo, GetExtension, ToAbsolutePath};
 use connector::Connector;
+use file::BodyFromFile;
 use hyper::body::Bytes;
 use hyper::header::{
     HeaderName, HeaderValue, ACCEPT_ENCODING, ALLOW, AUTHORIZATION, CONTENT_ENCODING,
@@ -32,11 +34,10 @@ use matcher::HostMatcher;
 use mime::HeaderValueExtend;
 use process::{start_daemon, stop_daemon};
 use regex::Regex;
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::path::{Path, PathBuf};
 use tokio::fs::{self, File};
 use tokio::net::TcpListener;
-use tokio::prelude::*;
 use var::ReplaceVar;
 
 #[tokio::main]
@@ -160,9 +161,10 @@ impl BuilderFromStatus for Builder {
 
 pub async fn connect(
     req: hyper::Request<Body>,
+    ip: IpAddr,
     configs: Vec<SiteConfig>,
 ) -> hyper::Result<Response<Body>> {
-    response(req, configs).await.map(|mut res| {
+    response(req, ip, configs).await.map(|mut res| {
         res.headers_mut()
             .insert(SERVER, HeaderValue::from_static(default::SERVER_NAME));
         res
@@ -175,6 +177,7 @@ lazy_static! {
 
 async fn response(
     req: hyper::Request<Body>,
+    remote: IpAddr,
     configs: Vec<SiteConfig>,
 ) -> hyper::Result<Response<Body>> {
     if let Some(host) = req.headers().get(HOST) {
@@ -185,7 +188,7 @@ async fn response(
         for config in configs.iter() {
             if config.host.is_match(host) {
                 let mut config = config.clone();
-                return Ok(handle(req, &mut config)
+                return Ok(handle(req, remote, &mut config)
                     .await
                     .append_headers(config.headers));
             }
@@ -200,7 +203,7 @@ async fn response(
     for config in configs {
         if config.host.is_empty() {
             let mut config = config;
-            return Ok(handle(req, &mut config)
+            return Ok(handle(req, remote, &mut config)
                 .await
                 .append_headers(config.headers));
         }
@@ -250,7 +253,7 @@ async fn proxy_response(mut req: Request<Body>, c: Proxy, config: &SiteConfig) -
     }
 }
 
-async fn handle(req: Request<Body>, config: &mut SiteConfig) -> Response<Body> {
+async fn handle(req: Request<Body>, ip: IpAddr, config: &mut SiteConfig) -> Response<Body> {
     // Merge location to config
     if !config.location.is_empty() {
         merge_location(req.uri().path(), config);
@@ -260,11 +263,11 @@ async fn handle(req: Request<Body>, config: &mut SiteConfig) -> Response<Body> {
         log.logger.write(req.uri().path()).await;
     }
 
-    if let Setting::Value(ip) = &config.ip {
-        // if !ip.is_pass() {
-        //     // 403
-        //     return
-        // }
+    // IP allow and deny
+    if let Setting::Value(matcher) = &config.ip {
+        if !matcher.is_pass(ip) {
+            return Response::builder().from_status(StatusCode::FORBIDDEN);
+        }
     }
 
     // HTTP auth
@@ -587,9 +590,16 @@ async fn file_response(
         .map(|ext| compress(header, config, ext))
         .unwrap_or(Encoding::None);
 
-    let (mut sender, body) = Body::channel();
-
     let mime = HeaderValue::from_extension(ext.unwrap_or_default());
+
+    let header = if encoding == Encoding::None {
+        let meta = file.metadata().await.unwrap();
+        (CONTENT_LENGTH, HeaderValue::from(meta.len()))
+    } else {
+        (CONTENT_ENCODING, encoding.to_header_value())
+    };
+
+    let body = Body::file(file, encoding.clone());
 
     let mut res = Response::builder()
         .status(status)
@@ -597,44 +607,7 @@ async fn file_response(
         .body(body)
         .unwrap();
 
-    if encoding == Encoding::None {
-        if let Ok(meta) = file.metadata().await {
-            res.headers_mut()
-                .insert(CONTENT_LENGTH, HeaderValue::from(meta.len()));
-        }
-    } else {
-        res.headers_mut()
-            .insert(CONTENT_ENCODING, encoding.to_header_value());
-    }
-
-    tokio::spawn(async move {
-        loop {
-            let mut buf = [0; default::BUF_SIZE];
-            match file.read(&mut buf).await {
-                Ok(len) => {
-                    if len == 0 {
-                        break;
-                    }
-                    let data = match &encoding {
-                        Encoding::Gzip(level) => compress::encode::gzip(&buf[..len], *level).await,
-                        Encoding::Deflate(level) => {
-                            compress::encode::deflate(&buf[..len], *level).await
-                        }
-                        Encoding::Br(level) => compress::encode::br(&buf[..len], *level).await,
-                        _ => Ok(buf[..len].to_vec()),
-                    };
-                    let data = match data {
-                        Ok(data) => data,
-                        Err(_) => break,
-                    };
-                    if sender.send_data(Bytes::from(data)).await.is_err() {
-                        break;
-                    }
-                }
-                Err(_) => break,
-            }
-        }
-    });
+    res.headers_mut().insert(header.0, header.1);
 
     res
 }

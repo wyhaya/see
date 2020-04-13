@@ -45,6 +45,7 @@ pub trait ForceTo {
     fn to_method(&self) -> Method;
     fn to_regex(&self) -> Regex;
     fn to_socket_addr(&self) -> SocketAddr;
+    fn to_ip_addr(&self) -> IpAddr;
     fn to_strftime(&self);
     fn to_uri(&self) -> Uri;
 }
@@ -83,6 +84,11 @@ impl ForceTo for &str {
 
     fn to_socket_addr(&self) -> SocketAddr {
         try_to_socket_addr(self).unwrap_or_else(|_| exit!("Cannot parse `{}` to SocketAddr", self))
+    }
+
+    fn to_ip_addr(&self) -> IpAddr {
+        self.parse::<IpAddr>()
+            .unwrap_or_else(|_| exit!("Cannot parse `{}` to IP addr"))
     }
 
     fn to_strftime(&self) {
