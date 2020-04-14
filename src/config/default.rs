@@ -22,7 +22,7 @@ pub const ALLOW_METHODS: [Method; 2] = [Method::GET, Method::HEAD];
 
 pub const COMPRESS_LEVEL: u32 = 3;
 
-pub const COMPRESS_EXTENSIONS: [&str; 5] = ["html", "css", "js", "json", "xml"];
+pub const COMPRESS_EXTENSIONS: [&str; 6] = ["html", "css", "js", "json", "png", "jpg"];
 
 pub const INDEX: [&str; 2] = ["index.html", "index.htm"];
 

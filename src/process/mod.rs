@@ -4,6 +4,8 @@ use std::env;
 use std::fs::{self, File};
 use std::io::Write;
 use std::process::Command;
+#[cfg(unix)]
+mod libc;
 
 #[macro_export]
 macro_rules! exit {

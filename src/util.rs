@@ -1,5 +1,4 @@
 use crate::*;
-use dirs;
 use rand::prelude::*;
 use std::env;
 use std::net::SocketAddr;
@@ -11,7 +10,7 @@ pub fn current_dir() -> PathBuf {
 }
 
 pub fn home_dir() -> PathBuf {
-    match dirs::home_dir() {
+    match dirs_sys::home_dir() {
         Some(home) => home,
         None => exit!("Can't get home directory"),
     }
