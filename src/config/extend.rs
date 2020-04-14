@@ -88,7 +88,7 @@ impl ForceTo for &str {
 
     fn to_ip_addr(&self) -> IpAddr {
         self.parse::<IpAddr>()
-            .unwrap_or_else(|_| exit!("Cannot parse `{}` to IP addr"))
+            .unwrap_or_else(|_| exit!("Cannot parse `{}` to IP addr", self))
     }
 
     fn to_strftime(&self) {

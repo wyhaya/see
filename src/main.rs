@@ -22,7 +22,6 @@ use config::{Directory, Proxy, RewriteStatus, ServerConfig, Setting, SiteConfig,
 use config::{ForceTo, GetExtension, ToAbsolutePath};
 use connector::Connector;
 use file::BodyFromFile;
-use hyper::body::Bytes;
 use hyper::header::{
     HeaderName, HeaderValue, ACCEPT_ENCODING, ALLOW, AUTHORIZATION, CONTENT_ENCODING,
     CONTENT_LENGTH, CONTENT_TYPE, HOST, LOCATION, SERVER, WWW_AUTHENTICATE,
@@ -38,10 +37,23 @@ use std::net::{IpAddr, SocketAddr};
 use std::path::{Path, PathBuf};
 use tokio::fs::{self, File};
 use tokio::net::TcpListener;
+use tokio::runtime;
 use var::ReplaceVar;
 
-#[tokio::main]
-async fn main() {
+fn main() {
+    let mut runtime = runtime::Builder::new()
+        .thread_name(default::SERVER_NAME)
+        .threaded_scheduler()
+        .enable_io()
+        .core_threads(num_cpus::get())
+        .max_threads(num_cpus::get() + 1)
+        .build()
+        .unwrap_or_else(|err| exit!("Cannot create async runtime\n{:?}", err));
+
+    runtime.block_on(start());
+}
+
+async fn start() {
     let mut app = App::new()
         .config(default::SERVER_NAME, default::VERSION)
         .cmd("start", "Quick start in the current directory")
@@ -581,7 +593,7 @@ async fn output_error(
 
 async fn file_response(
     status: StatusCode,
-    mut file: File,
+    file: File,
     ext: Option<&str>,
     header: Option<&HeaderValue>,
     config: &SiteConfig,

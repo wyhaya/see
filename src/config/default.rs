@@ -28,9 +28,9 @@ pub const INDEX: [&str; 2] = ["index.html", "index.htm"];
 
 pub const TIME_FORMAT: &str = "%Y-%m-%d %H:%M";
 
-pub const BUF_SIZE: usize = 2 * 1024;
+pub const BUF_SIZE: usize = 16 * 1024;
 
-pub const PROXY_BUF_SIZE: usize = 2 * 1024;
+pub const PROXY_BUF_SIZE: usize = 8 * 1024;
 
 pub const TIMEOUT: u64 = 5000;
 
