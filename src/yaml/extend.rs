@@ -4,22 +4,6 @@ use std::fmt::Display;
 use yaml_rust::yaml::Hash;
 use yaml_rust::Yaml;
 
-#[macro_export]
-macro_rules! is_none {
-    ($yaml: expr, $bad: expr) => {
-        if $yaml.is_badvalue() {
-            $bad;
-        }
-    };
-    ($yaml: expr, $bad: expr, $ok: expr) => {{
-        if $yaml.is_badvalue() {
-            $bad
-        } else {
-            $ok
-        }
-    }};
-}
-
 pub trait YamlExtend {
     fn check(&self, name: &str, keys: &[&str], must: &[&str]);
     fn try_to_string(&self) -> Option<String>;
@@ -46,10 +30,9 @@ impl YamlExtend for Yaml {
 
         // Required key
         for must in must {
-            is_none!(
-                self[name][must.clone()],
+            if self[name][must.clone()].is_badvalue() {
                 exit!("Missing '{}' in '{}'", must, name)
-            )
+            }
         }
     }
 
@@ -117,7 +100,9 @@ impl YamlExtend for Yaml {
     }
 
     fn key_to_multiple_string(&self, key: &str) -> Vec<String> {
-        is_none!(self[key], return vec![]);
+        if self[key].is_badvalue() {
+            return vec![];
+        }
 
         let mut result = vec![];
         match self[key].as_vec() {

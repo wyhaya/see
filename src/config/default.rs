@@ -22,11 +22,11 @@ pub const ALLOW_METHODS: [Method; 2] = [Method::GET, Method::HEAD];
 
 pub const COMPRESS_LEVEL: u32 = 3;
 
-pub const COMPRESS_EXTENSIONS: [&str; 6] = ["html", "css", "js", "json", "png", "jpg"];
+pub const COMPRESS_EXTENSIONS: [&str; 5] = ["html", "css", "js", "json", "png"];
 
 pub const INDEX: [&str; 2] = ["index.html", "index.htm"];
 
-pub const TIME_FORMAT: &str = "%Y-%m-%d %H:%M";
+pub const DIRECTORY_TIME_FORMAT: &str = "%Y-%m-%d %H:%M";
 
 pub const BUF_SIZE: usize = 16 * 1024;
 
@@ -48,12 +48,12 @@ pub fn quick_start_config(root: PathBuf, addr: SocketAddr) -> ServerConfig {
         sites: vec![SiteConfig {
             https: None,
             host: HostMatcher::default(),
-            root,
+            root: Some(root),
             echo: Setting::None,
             file: Setting::None,
             index: Setting::None,
             directory: Setting::Value(Directory {
-                time: Some(TIME_FORMAT.to_string()),
+                time: Some(DIRECTORY_TIME_FORMAT.to_string()),
                 size: true,
             }),
             headers: Setting::None,
@@ -66,6 +66,7 @@ pub fn quick_start_config(root: PathBuf, addr: SocketAddr) -> ServerConfig {
             proxy: Setting::None,
             log: Setting::None,
             ip: Setting::None,
+            buffer: Setting::None,
             location: Vec::with_capacity(0),
         }],
     }

@@ -13,21 +13,17 @@ pub trait GetExtension {
 
 impl GetExtension for PathBuf {
     fn get_extension(&self) -> Option<&str> {
-        if let Some(p) = self.extension() {
-            if let Some(p) = p.to_str() {
-                return Some(p);
-            }
-        }
-        None
+        let ext = self.extension()?;
+        ext.to_str()
     }
 }
 
-pub trait ToAbsolutePath {
-    fn to_absolute_path<P: AsRef<Path>>(&self, root: P) -> PathBuf;
+pub trait AbsolutePath {
+    fn absolute_path<P: AsRef<Path>>(&self, root: P) -> PathBuf;
 }
 
-impl ToAbsolutePath for String {
-    fn to_absolute_path<P: AsRef<Path>>(&self, root: P) -> PathBuf {
+impl AbsolutePath for String {
+    fn absolute_path<P: AsRef<Path>>(&self, root: P) -> PathBuf {
         let path = PathBuf::from(self);
         if path.is_absolute() {
             path
@@ -39,6 +35,7 @@ impl ToAbsolutePath for String {
 
 pub trait ForceTo {
     fn to_duration(&self) -> Duration;
+    fn to_size(&self) -> usize;
     fn to_glob(&self) -> Glob;
     fn to_header_name(&self) -> HeaderName;
     fn to_header_value(&self) -> HeaderValue;
@@ -55,6 +52,11 @@ impl ForceTo for &str {
         try_parse_duration(self).unwrap_or_else(|err| {
             exit!("Cannot parse `{}` to duration: {}", self, err.description())
         })
+    }
+
+    fn to_size(&self) -> usize {
+        try_parse_size(self)
+            .unwrap_or_else(|err| exit!("Cannot parse `{}` to size: {}", self, err.description()))
     }
 
     fn to_glob(&self) -> Glob {

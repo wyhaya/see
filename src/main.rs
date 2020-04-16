@@ -18,8 +18,8 @@ use ace::App;
 use bright::Colorful;
 use compress::encoding::Encoding;
 use config::default;
+use config::{AbsolutePath, ForceTo, GetExtension};
 use config::{Directory, Proxy, RewriteStatus, ServerConfig, Setting, SiteConfig, StatusPage};
-use config::{ForceTo, GetExtension, ToAbsolutePath};
 use connector::Connector;
 use file::BodyFromFile;
 use hyper::header::{
@@ -30,7 +30,6 @@ use hyper::http::response::Builder;
 use hyper::{Body, Client, HeaderMap, Method, Request, Response, StatusCode, Uri, Version};
 use lazy_static::lazy_static;
 use matcher::HostMatcher;
-use mime::HeaderValueExtend;
 use process::{start_daemon, stop_daemon};
 use regex::Regex;
 use std::net::{IpAddr, SocketAddr};
@@ -124,7 +123,7 @@ async fn start() {
     }
 
     if app.is("start") {
-        quick_start_info(configs[0].listen, configs[0].sites[0].root.clone());
+        quick_start_info(configs[0].listen, configs[0].sites[0].root.clone().unwrap());
     }
 
     bind_tcp(configs).await;
@@ -339,9 +338,6 @@ async fn handle(req: Request<Body>, ip: IpAddr, config: &mut SiteConfig) -> Resp
             .unwrap();
     }
 
-    let cur_path = String::from(".") + req.uri().path();
-    let mut path = Path::new(&config.root).join(&cur_path);
-
     // rewrite
     if let Setting::Value(rewrite) = &config.rewrite {
         let value = rewrite.location.clone().unwrap_or_else(|s, r| {
@@ -360,10 +356,30 @@ async fn handle(req: Request<Body>, ip: IpAddr, config: &mut SiteConfig) -> Resp
             .unwrap();
     }
 
-    // file
-    if let Setting::Value(file) = &config.file {
-        path = file.clone();
-    }
+    let cur_path = String::from(".") + req.uri().path();
+    let path = match &config.root {
+        Some(root) => {
+            // file
+            if let Setting::Value(p) = &config.file {
+                p.clone()
+            } else {
+                Path::new(root).join(&cur_path)
+            }
+        }
+        None => {
+            // file
+            if let Setting::Value(p) = &config.file {
+                p.clone()
+            } else {
+                return output_error(
+                    req.headers().get(ACCEPT_ENCODING),
+                    &config,
+                    StatusCode::NOT_FOUND,
+                )
+                .await;
+            }
+        }
+    };
 
     match fs::metadata(&path).await {
         Ok(meta) => {
@@ -486,8 +502,8 @@ fn merge_location(route: &str, config: &mut SiteConfig) {
         if !item.location.is_match(route) {
             continue;
         }
-        if let Some(root) = &item.root {
-            config.root = root.clone();
+        if item.root.is_some() {
+            config.root = item.root.clone();
         }
         if !item.echo.is_none() {
             config.echo = item.echo.clone();
@@ -534,6 +550,9 @@ fn merge_location(route: &str, config: &mut SiteConfig) {
         if !item.ip.is_none() {
             config.ip = item.ip.clone();
         }
+        if !item.buffer.is_none() {
+            config.buffer = item.buffer.clone();
+        }
         if !item.status._403.is_none() {
             config.status._403 = item.status._403.clone();
         }
@@ -547,7 +566,7 @@ fn merge_location(route: &str, config: &mut SiteConfig) {
             config.status._502 = item.status._502.clone();
         }
 
-        if item._break {
+        if item.break_ {
             break;
         }
     }
@@ -602,8 +621,6 @@ async fn file_response(
         .map(|ext| compress(header, config, ext))
         .unwrap_or(Encoding::None);
 
-    let mime = HeaderValue::from_extension(ext.unwrap_or_default());
-
     let header = if encoding == Encoding::None {
         let meta = file.metadata().await.unwrap();
         (CONTENT_LENGTH, HeaderValue::from(meta.len()))
@@ -611,11 +628,16 @@ async fn file_response(
         (CONTENT_ENCODING, encoding.to_header_value())
     };
 
-    let body = Body::file(file, encoding.clone());
+    let size = match config.buffer {
+        Setting::Value(u) => u,
+        _ => default::BUF_SIZE,
+    };
+
+    let body = Body::file(file, size, encoding.clone());
 
     let mut res = Response::builder()
         .status(status)
-        .header(CONTENT_TYPE, mime)
+        .header(CONTENT_TYPE, mime::from_extension(ext.unwrap_or_default()))
         .body(body)
         .unwrap();
 
@@ -642,7 +664,7 @@ async fn fallbacks(file: &PathBuf, exts: &Setting<Vec<String>>) -> Option<(File,
 
 async fn index_back(root: &PathBuf, files: &Vec<String>) -> Option<(File, String)> {
     for name in files {
-        let path = name.to_absolute_path(root);
+        let path = name.absolute_path(root);
         if path.is_file() {
             if let Ok(file) = File::open(&path).await {
                 if let Some(s) = &path.get_extension() {

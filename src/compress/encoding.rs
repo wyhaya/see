@@ -11,6 +11,9 @@ pub enum Encoding {
 
 impl Encoding {
     pub fn new(mode: &str, level: u32) -> Self {
+        if level > 9 {
+            exit!("Compress level should be an integer between 0-9");
+        }
         match mode {
             "auto" => Encoding::Auto(level),
             "gzip" => Encoding::Gzip(level),

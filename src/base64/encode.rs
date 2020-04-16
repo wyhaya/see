@@ -8,10 +8,10 @@ pub fn encode<T: AsRef<[u8]>>(input: T) -> String {
     }
 
     let mut s = String::new();
-    let chunkds = merge.chunks(6);
-    let lack = chunkds.len() % 4;
+    let chunks = merge.chunks(6);
+    let lack = chunks.len() % 4;
 
-    chunkds.for_each(|bin| {
+    chunks.for_each(|bin| {
         let i = to_decimal(bin.to_vec()) as usize;
         s.push_str(&TABLE[i..i + 1])
     });
@@ -60,11 +60,12 @@ fn to_binary(mut n: u8) -> Vec<u8> {
 mod test {
 
     #[test]
+    fn to_encode() {}
+
+    #[test]
     fn to_decimal() {}
 
     #[test]
     fn to_binary() {}
-
-    #[test]
-    fn to_encode() {}
+    
 }

@@ -15,7 +15,7 @@ const TEMPLATE: &str = r#"<!DOCTYPE html>
     <title>Index of {title}</title>
     <style>
         body {
-            font-family: "pingfang sc", "microsoft yahei", "Helvetica Neue";
+            font-family: "Segoe UI",Segoe,Tahoma,Arial,Verdana,sans-serif;
             padding: 0 16px 0;
             margin: 0;
         }
@@ -36,6 +36,16 @@ const TEMPLATE: &str = r#"<!DOCTYPE html>
             text-overflow: ellipsis;
             overflow: hidden;
             white-space: nowrap;
+        }
+        a {
+            color: #2a7ae2;
+            text-decoration: none;
+        }
+        a:hover {
+            text-decoration: underline;
+        }
+        a:active, a:visited {
+            color: #1756a9;
         }
         time, span {
             padding-left: 16px;

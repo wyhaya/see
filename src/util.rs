@@ -52,7 +52,7 @@ pub fn rand<T: Clone>(vec: Vec<T>) -> T {
 }
 
 #[derive(Debug)]
-pub enum ParseDurationError {
+pub enum DigitalUnitError {
     NoNumber,
     NoUnit,
     ErrorNumber,
@@ -60,49 +60,81 @@ pub enum ParseDurationError {
     Zero,
 }
 
-impl ParseDurationError {
+impl DigitalUnitError {
     pub fn description(&self) -> &str {
         match self {
-            ParseDurationError::NoNumber => "no number",
-            ParseDurationError::NoUnit => "no unit",
-            ParseDurationError::ErrorNumber => "error number",
-            ParseDurationError::ErrorUnit => "error unit",
-            ParseDurationError::Zero => "zero",
+            DigitalUnitError::NoNumber => "no number",
+            DigitalUnitError::NoUnit => "no unit",
+            DigitalUnitError::ErrorNumber => "error number",
+            DigitalUnitError::ErrorUnit => "error unit",
+            DigitalUnitError::Zero => "zero",
         }
     }
 }
 
 // Parse time format into Duration
 // format: 1d 1.2h 5s ...
-pub fn try_parse_duration(text: &str) -> Result<Duration, ParseDurationError> {
+pub fn try_parse_duration(text: &str) -> Result<Duration, DigitalUnitError> {
     let numbers = "0123456789.".chars().collect::<Vec<char>>();
     let i = text
         .chars()
         .position(|ch| !numbers.contains(&ch))
-        .ok_or_else(|| ParseDurationError::NoUnit)?;
+        .ok_or_else(|| DigitalUnitError::NoUnit)?;
 
     let time = &text[..i];
     let unit = &text[i..];
 
     if time.is_empty() {
-        return Err(ParseDurationError::NoNumber);
+        return Err(DigitalUnitError::NoNumber);
     }
     let n = time
         .parse::<f64>()
-        .map_err(|_| ParseDurationError::ErrorNumber)?;
+        .map_err(|_| DigitalUnitError::ErrorNumber)?;
     let ms = match unit {
         "d" => Ok(24_f64 * 60_f64 * 60_f64 * 1000_f64 * n),
         "h" => Ok(60_f64 * 60_f64 * 1000_f64 * n),
         "m" => Ok(60_f64 * 1000_f64 * n),
         "s" => Ok(1000_f64 * n),
         "ms" => Ok(n),
-        _ => Err(ParseDurationError::ErrorUnit),
+        _ => Err(DigitalUnitError::ErrorUnit),
     }? as u64;
 
     if ms == 0 {
-        Err(ParseDurationError::Zero)
+        Err(DigitalUnitError::Zero)
     } else {
         Ok(Duration::from_millis(ms))
+    }
+}
+
+//
+pub fn try_parse_size(text: &str) -> Result<usize, DigitalUnitError> {
+    let numbers = "0123456789.".chars().collect::<Vec<char>>();
+    let i = text
+        .chars()
+        .position(|ch| !numbers.contains(&ch))
+        .ok_or_else(|| DigitalUnitError::NoUnit)?;
+
+    let num = &text[..i];
+    let unit = &text[i..];
+
+    if num.is_empty() {
+        return Err(DigitalUnitError::NoNumber);
+    }
+    let n = num
+        .parse::<f64>()
+        .map_err(|_| DigitalUnitError::ErrorNumber)?;
+    let size = match unit {
+        "g" => Ok(n * 1024_f64 * 1024_f64 * 1024_f64),
+        "m" => Ok(n * 1024_f64 * 1204_f64),
+        "k" => Ok(n * 1024_f64),
+        "b" => Ok(n),
+        _ => Err(DigitalUnitError::ErrorUnit),
+    }? as usize;
+
+    if size == 0 {
+        Err(DigitalUnitError::Zero)
+    } else {
+        Ok(size)
     }
 }
 
