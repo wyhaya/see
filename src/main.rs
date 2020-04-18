@@ -16,12 +16,11 @@ mod yaml;
 
 use ace::App;
 use bright::Colorful;
-use compress::encoding::Encoding;
 use config::default;
 use config::{AbsolutePath, ForceTo, GetExtension};
 use config::{Directory, Proxy, RewriteStatus, ServerConfig, Setting, SiteConfig, StatusPage};
 use connector::Connector;
-use file::BodyFromFile;
+use file::FileBody;
 use hyper::header::{
     HeaderName, HeaderValue, ACCEPT_ENCODING, ALLOW, AUTHORIZATION, CONTENT_ENCODING,
     CONTENT_LENGTH, CONTENT_TYPE, HOST, LOCATION, SERVER, WWW_AUTHENTICATE,
@@ -573,20 +572,6 @@ fn merge_location(route: &str, config: &mut SiteConfig) {
     config.location.clear();
 }
 
-fn compress(encoding: Option<&HeaderValue>, config: &SiteConfig, ext: &str) -> Encoding {
-    if let Setting::Value(compress) = &config.compress {
-        if compress.extensions.iter().any(|item| *item == ext) {
-            // gzip, deflate, br
-            if let Some(encoding) = encoding {
-                let a = encoding.to_str().unwrap();
-                let modes: Vec<&str> = a.split(", ").collect();
-                return compress.mode.parse_mode(modes);
-            }
-        }
-    }
-    Encoding::None
-}
-
 async fn output_error(
     encoding: Option<&HeaderValue>,
     config: &SiteConfig,
@@ -617,15 +602,23 @@ async fn file_response(
     header: Option<&HeaderValue>,
     config: &SiteConfig,
 ) -> Response<Body> {
-    let encoding = ext
-        .map(|ext| compress(header, config, ext))
-        .unwrap_or(Encoding::None);
+    let encoding = match &config.compress {
+        Setting::Value(compress) => ext
+            .map(|ext| {
+                header
+                    .map(|header| compress.get_compress_mode(&header, ext))
+                    .unwrap_or_default()
+            })
+            .unwrap_or_default(),
+        _ => None,
+    };
 
-    let header = if encoding == Encoding::None {
-        let meta = file.metadata().await.unwrap();
-        (CONTENT_LENGTH, HeaderValue::from(meta.len()))
-    } else {
-        (CONTENT_ENCODING, encoding.to_header_value())
+    let header = match encoding {
+        Some(encoding) => (CONTENT_ENCODING, encoding.to_header_value()),
+        None => {
+            let meta = file.metadata().await.unwrap();
+            (CONTENT_LENGTH, HeaderValue::from(meta.len()))
+        }
     };
 
     let size = match config.buffer {
@@ -633,7 +626,7 @@ async fn file_response(
         _ => default::BUF_SIZE,
     };
 
-    let body = Body::file(file, size, encoding.clone());
+    let body = FileBody::new(file, size, encoding);
 
     let mut res = Response::builder()
         .status(status)

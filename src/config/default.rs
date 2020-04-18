@@ -1,3 +1,4 @@
+use crate::compress::CompressLevel;
 use crate::{Directory, HostMatcher, ServerConfig, Setting, SiteConfig, StatusPage};
 use hyper::Method;
 use std::net::SocketAddr;
@@ -20,7 +21,7 @@ pub const CONFIG_PATH: [&str; 2] = [".see", "config.yml"];
 
 pub const ALLOW_METHODS: [Method; 2] = [Method::GET, Method::HEAD];
 
-pub const COMPRESS_LEVEL: u32 = 3;
+pub const COMPRESS_LEVEL: CompressLevel = CompressLevel::Default;
 
 pub const COMPRESS_EXTENSIONS: [&str; 5] = ["html", "css", "js", "json", "png"];
 

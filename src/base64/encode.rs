@@ -67,5 +67,4 @@ mod test {
 
     #[test]
     fn to_binary() {}
-    
 }

@@ -146,11 +146,14 @@ File compression options
 compress: true
 # or
 compress:         
-  mode: gzip  # optional value 'auto' 'gzip' 'deflate' 'br'
-  level: 3    # Integer with compression level 0-9
-  extension:  # Which files are compressed, default: html css js json xml
+  mode: gzip     # optional value 'auto' 'gzip' 'deflate' 'br'
+  level: default # optional value 'default' 'fastest' 'best'
+  extension:     # Which files are compressed, default: html css js json xml
     - css
     - js
+# or
+compress:         
+  mode: br gzip auto     # Set compression priority
 ```
 
 ### method

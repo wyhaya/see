@@ -19,7 +19,7 @@ keywords = [
 
 [dependencies]
 ace = "0.2.0"
-async-compression = { version = "0.2.0", features = ["futures-write", "gzip", "deflate", "brotli"] }
+async-compression = { version = "0.3.2", features = ["futures-write", "gzip", "deflate", "brotli"] }
 bright = "0.3.0"
 dirs-sys = "0.3.4"
 futures = "0.3.4"

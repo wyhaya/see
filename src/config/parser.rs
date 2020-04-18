@@ -1,12 +1,11 @@
-use crate::compress::encoding::Encoding;
 use crate::config::default;
 use crate::config::ForceTo;
 use crate::logger::Logger;
 use crate::util::*;
 use crate::var::{ToVar, Var};
-use crate::yaml::YamlExtend;
 use crate::*;
 use base64::encode;
+use compress::{CompressLevel, CompressMode, Encoding};
 use hyper::{Method, Uri};
 use matcher::{HostMatcher, IpMatcher, LocationMatcher};
 use std::fs;
@@ -17,6 +16,7 @@ use std::time::Duration;
 use tokio_rustls::rustls::internal::pemfile::{certs, rsa_private_keys};
 use tokio_rustls::rustls::{NoClientAuth, ServerConfig as Config};
 use tokio_rustls::TlsAcceptor;
+use yaml::YamlExtend;
 use yaml_rust::{Yaml, YamlLoader};
 
 #[derive(Debug, Clone)]
@@ -171,8 +171,26 @@ impl From<String> for Rewrite {
 
 #[derive(Debug, Clone)]
 pub struct Compress {
-    pub mode: Encoding,
+    pub modes: Vec<Encoding>,
     pub extensions: Vec<String>,
+}
+
+impl Compress {
+    pub fn get_compress_mode(&self, header: &HeaderValue, ext: &str) -> Option<CompressMode> {
+        if self.extensions.iter().any(|item| *item == ext) {
+            // accept-encoding: gzip, deflate, br
+            let header: Vec<&str> = match header.to_str() {
+                Ok(encoding) => encoding.split(", ").collect(),
+                Err(_) => return None,
+            };
+            for encoding in &self.modes {
+                if let Some(compress) = encoding.get_compress_mode(&header) {
+                    return Some(compress);
+                }
+            }
+        }
+        None
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -570,7 +588,7 @@ impl Parser {
         // compress: true
         if compress.as_bool().is_some() {
             return Setting::Value(Compress {
-                mode: Encoding::Auto(default::COMPRESS_LEVEL),
+                modes: vec![Encoding::Auto(default::COMPRESS_LEVEL)],
                 extensions: default::COMPRESS_EXTENSIONS
                     .iter()
                     .map(|e| e.to_string())
@@ -584,14 +602,14 @@ impl Parser {
         let level = if compress["level"].is_badvalue() {
             default::COMPRESS_LEVEL
         } else {
-            compress.key_to_number("level") as u32
+            CompressLevel::new(compress.key_to_string("level"))
         };
 
-        let mode = if compress["mode"].is_badvalue() {
-            Encoding::Auto(level)
+        let modes = if compress["mode"].is_badvalue() {
+            vec![Encoding::Auto(level)]
         } else {
-            let mode = compress.key_to_string("mode");
-            Encoding::new(&mode, level)
+            let mode = compress.key_to_multiple_string("mode");
+            mode.iter().map(|mode| Encoding::new(mode, level)).collect()
         };
 
         let extensions = if compress["extension"].is_badvalue() {
@@ -603,7 +621,7 @@ impl Parser {
             compress.key_to_multiple_string("extension")
         };
 
-        Setting::Value(Compress { mode, extensions })
+        Setting::Value(Compress { modes, extensions })
     }
 
     fn extensions(&self) -> Setting<Vec<String>> {
