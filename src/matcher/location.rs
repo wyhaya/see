@@ -1,4 +1,4 @@
-use crate::config::ForceTo;
+use crate::config::Force;
 use crate::matcher::{replace_match_keyword, END_WORD, REGEX_WORD, START_WORD};
 use globset::GlobMatcher;
 use regex::Regex;

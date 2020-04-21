@@ -1,4 +1,4 @@
-use crate::config::ForceTo;
+use crate::config::Force;
 use crate::matcher::{WildcardMatcher, ANY_WORD};
 use std::net::IpAddr;
 

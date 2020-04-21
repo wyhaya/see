@@ -43,9 +43,9 @@ pub const LOG_FORMAT: &str = "";
 
 pub const START_PORT: i64 = 80;
 
-pub fn quick_start_config(root: PathBuf, addr: SocketAddr) -> ServerConfig {
+pub fn quick_start_config(root: PathBuf, listen: SocketAddr) -> ServerConfig {
     ServerConfig {
-        listen: addr,
+        listen,
         sites: vec![SiteConfig {
             https: None,
             host: HostMatcher::default(),

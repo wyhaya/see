@@ -1,10 +1,11 @@
 use crate::config::default;
-use crate::config::ForceTo;
+use crate::config::Force;
 use crate::logger::Logger;
 use crate::util::*;
 use crate::var::{ToVar, Var};
 use crate::*;
 use base64::encode;
+use compress::Level;
 use compress::{CompressLevel, CompressMode, Encoding};
 use hyper::{Method, Uri};
 use matcher::{HostMatcher, IpMatcher, LocationMatcher};

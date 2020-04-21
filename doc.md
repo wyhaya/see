@@ -148,7 +148,7 @@ compress: true
 compress:         
   mode: gzip     # optional value 'auto' 'gzip' 'deflate' 'br'
   level: default # optional value 'default' 'fastest' 'best'
-  extension:     # Which files are compressed, default: html css js json xml
+  extension:     # Which files are compressed, default: html css js json png
     - css
     - js
 # or

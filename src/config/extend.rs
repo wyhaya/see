@@ -1,4 +1,3 @@
-use crate::util::*;
 use crate::*;
 use globset::Glob;
 use hyper::{Method, Uri};
@@ -6,12 +5,13 @@ use regex::Regex;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::time::Duration;
+use util::*;
 
-pub trait GetExtension {
+pub trait PathExtension {
     fn get_extension(&self) -> Option<&str>;
 }
 
-impl GetExtension for PathBuf {
+impl PathExtension for PathBuf {
     fn get_extension(&self) -> Option<&str> {
         let ext = self.extension()?;
         ext.to_str()
@@ -33,7 +33,7 @@ impl AbsolutePath for String {
     }
 }
 
-pub trait ForceTo {
+pub trait Force {
     fn to_duration(&self) -> Duration;
     fn to_size(&self) -> usize;
     fn to_glob(&self) -> Glob;
@@ -47,7 +47,7 @@ pub trait ForceTo {
     fn to_uri(&self) -> Uri;
 }
 
-impl ForceTo for &str {
+impl Force for &str {
     fn to_duration(&self) -> Duration {
         try_parse_duration(self).unwrap_or_else(|err| {
             exit!("Cannot parse `{}` to duration: {}", self, err.description())

@@ -19,7 +19,7 @@ keywords = [
 
 [dependencies]
 ace = "0.2.0"
-async-compression = { version = "0.3.2", features = ["futures-write", "gzip", "deflate", "brotli"] }
+async-compression = { version = "0.3.2", features = ["stream", "gzip", "deflate", "brotli"] }
 bright = "0.3.0"
 dirs-sys = "0.3.4"
 futures = "0.3.4"
@@ -34,6 +34,9 @@ tokio = { version = "0.2.16", features = ["full"] }
 tokio-rustls = "0.13.0"
 webpki-roots = "0.19.0"
 yaml-rust = "0.4.3"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2.69"
 
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "0.3.8", features = ["processthreadsapi"] }

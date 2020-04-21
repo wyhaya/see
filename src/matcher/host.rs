@@ -1,4 +1,4 @@
-use crate::config::ForceTo;
+use crate::config::Force;
 use crate::matcher::{replace_match_keyword, WildcardMatcher, ANY_WORD, REGEX_WORD};
 use regex::Regex;
 

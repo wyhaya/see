@@ -4,12 +4,13 @@ mod compress;
 mod config;
 mod connect;
 mod connector;
+mod daemon;
 mod directory;
 mod file;
+mod kill;
 mod logger;
 mod matcher;
 mod mime;
-mod process;
 mod util;
 mod var;
 mod yaml;
@@ -17,10 +18,11 @@ mod yaml;
 use ace::App;
 use bright::Colorful;
 use config::default;
-use config::{AbsolutePath, ForceTo, GetExtension};
+use config::{AbsolutePath, Force, PathExtension};
 use config::{Directory, Proxy, RewriteStatus, ServerConfig, Setting, SiteConfig, StatusPage};
 use connector::Connector;
-use file::FileBody;
+use daemon::{start_daemon, stop_daemon};
+use file::create_file_body;
 use hyper::header::{
     HeaderName, HeaderValue, ACCEPT_ENCODING, ALLOW, AUTHORIZATION, CONTENT_ENCODING,
     CONTENT_LENGTH, CONTENT_TYPE, HOST, LOCATION, SERVER, WWW_AUTHENTICATE,
@@ -29,7 +31,6 @@ use hyper::http::response::Builder;
 use hyper::{Body, Client, HeaderMap, Method, Request, Response, StatusCode, Uri, Version};
 use lazy_static::lazy_static;
 use matcher::HostMatcher;
-use process::{start_daemon, stop_daemon};
 use regex::Regex;
 use std::net::{IpAddr, SocketAddr};
 use std::path::{Path, PathBuf};
@@ -626,7 +627,7 @@ async fn file_response(
         _ => default::BUF_SIZE,
     };
 
-    let body = FileBody::new(file, size, encoding);
+    let body = create_file_body(file, size, encoding);
 
     let mut res = Response::builder()
         .status(status)

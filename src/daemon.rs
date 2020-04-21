@@ -1,52 +1,10 @@
-use crate::util::{config_dir, config_path, pid_path};
-use bright::Colorful;
+use crate::kill::{kill, KillError};
+use crate::util::{config_dir, pid_path};
+use crate::*;
 use std::env;
 use std::fs::{self, File};
 use std::io::Write;
 use std::process::Command;
-#[cfg(unix)]
-mod libc;
-
-#[macro_export]
-macro_rules! exit {
-    ($($arg:tt)*) => {
-       {
-            eprint!("{}", "error: ".red().bold());
-            eprintln!($($arg)*);
-            std::process::exit(1)
-       }
-    };
-}
-
-#[derive(Debug)]
-pub enum ExitError {
-    None,
-    Failure,
-}
-
-#[cfg(unix)]
-pub fn kill(pid: i32) -> Result<(), ExitError> {
-    if unsafe { libc::kill(pid, 0) } != 0 {
-        return Err(ExitError::None);
-    }
-    if unsafe { libc::kill(pid, libc::SIGTERM) } != 0 {
-        return Err(ExitError::Failure);
-    }
-
-    Ok(())
-}
-
-#[cfg(windows)]
-pub fn kill(pid: i32) -> Result<(), ExitError> {
-    use winapi::um::processthreadsapi::{OpenProcess, TerminateProcess};
-
-    unsafe {
-        let handle = OpenProcess(1, 0, pid as u32);
-        TerminateProcess(handle, 0);
-    }
-
-    Ok(())
-}
 
 pub fn start_daemon(detach: &str) {
     let args = env::args().collect::<Vec<String>>();
@@ -60,7 +18,7 @@ pub fn start_daemon(detach: &str) {
     match child {
         Ok(child) => {
             let _ = fs::create_dir_all(config_dir());
-            let mut pid = File::create(config_path()).unwrap();
+            let mut pid = File::create(pid_path()).unwrap();
             write!(pid, "{}", child.id()).unwrap();
         }
         Err(err) => exit!("Failed to run in the background\n{:?}", err),
@@ -82,8 +40,8 @@ pub fn stop_daemon() {
 
             if let Err(err) = kill(pid) {
                 match err {
-                    ExitError::None => exit!("Process does not exist"),
-                    ExitError::Failure => exit!("Can't kill the process"),
+                    KillError::NotExist => exit!("Process does not exist"),
+                    KillError::Failure => exit!("Can't kill the daemon"),
                 }
             }
         }
