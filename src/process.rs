@@ -37,7 +37,7 @@ pub fn kill(pid: i32) -> Result<(), KillError> {
 }
 
 #[cfg(windows)]
-pub fn kill(pid: i32) -> Result<(), ExitError> {
+pub fn kill(pid: i32) -> Result<(), KillError> {
     use winapi::um::handleapi::CloseHandle;
     use winapi::um::processthreadsapi::{OpenProcess, TerminateProcess};
 
