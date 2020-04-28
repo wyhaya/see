@@ -1,7 +1,6 @@
-use crate::config::ServerConfig;
+use crate::config::{ServerConfig, SiteConfig};
 use crate::connect;
-use crate::connect::Connect;
-use futures::{Stream, StreamExt};
+use futures::{ready, Stream, StreamExt};
 use hyper::server::accept::from_stream;
 use hyper::server::conn::Http;
 use hyper::server::Builder;
@@ -9,22 +8,66 @@ use hyper::service::{make_service_fn, service_fn};
 use std::convert::Infallible;
 use std::net::IpAddr;
 use std::pin::Pin;
-use std::task::{Context, Poll};
-use tokio::io;
+use std::task::Context;
+use std::task::Poll;
+use tokio::io::{self, AsyncRead, AsyncWrite};
 use tokio::net::{TcpListener, TcpStream};
+use tokio_rustls::server::TlsStream;
 
 pub async fn run(tcp: TcpListener, config: ServerConfig) {
-    let stream = AcceptStream::new(tcp).filter_map(|res| {
+    let stream = AcceptStream::new(tcp).filter_map(|rst| {
         let config = config.clone();
 
         async move {
-            let (stream, ip) = if let Ok(res) = res { res } else { return None };
+            let (mut stream, ip) = match rst {
+                Ok(r) => r,
+                Err(_) => return None,
+            };
 
-            return Some(Ok::<_, hyper::Error>(Connect::Stream(
+            if let Some(tls) = &config.tls {
+                let mut buf = [0; 1];
+                let is_https = stream
+                    .peek(&mut buf)
+                    .await
+                    .map(|_| buf[0] == 22)
+                    .unwrap_or_default();
+
+                if is_https {
+                    let stream = match tls.clone().accept(stream).await {
+                        Ok(s) => s,
+                        // TLS connection failed
+                        Err(_) => return None,
+                    };
+
+                    let (_, session) = stream.get_ref();
+                    let name = session.get_sni_hostname().unwrap();
+
+                    let c = config
+                        .sites
+                        .iter()
+                        .find(|d| {
+                            if let Some(n) = &d.sni_name {
+                                return n == name;
+                            }
+                            false
+                        })
+                        .unwrap();
+
+                    // Use HTTPS response
+                    return Some(Ok::<_, hyper::Error>(Connect::TlsStream(
+                        stream,
+                        ip,
+                        vec![c.clone()],
+                    )));
+                }
+            }
+
+            // Use HTTP response
+            Some(Ok::<_, hyper::Error>(Connect::Stream(
                 stream,
                 ip,
                 config.sites,
-            )));
+            )))
         }
     });
 
@@ -42,6 +85,7 @@ pub async fn run(tcp: TcpListener, config: ServerConfig) {
     let _ = Builder::new(from_stream(stream), http).serve(service).await;
 }
 
+// Accept stream and remote ip from TcpListener
 struct AcceptStream {
     listener: TcpListener,
 }
@@ -56,60 +100,55 @@ impl Stream for AcceptStream {
     type Item = io::Result<(TcpStream, IpAddr)>;
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let poll = self.get_mut().listener.poll_accept(cx);
+        let rst = ready!(poll);
+        let item = rst.map(|(stream, addr)| (stream, addr.ip()));
 
-        match poll {
-            Poll::Ready(res) => {
-                let res = res.map(|(stream, addr)| (stream, addr.ip()));
-                Poll::Ready(Some(res))
-            }
-            Poll::Pending => Poll::Pending,
+        Poll::Ready(Some(item))
+    }
+}
+
+// Distinguish between http and https
+pub enum Connect {
+    Stream(TcpStream, IpAddr, Vec<SiteConfig>),
+    TlsStream(TlsStream<TcpStream>, IpAddr, Vec<SiteConfig>),
+}
+
+impl AsyncRead for Connect {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut [u8],
+    ) -> Poll<io::Result<usize>> {
+        match self.get_mut() {
+            Connect::Stream(stream, _, _) => Pin::new(stream).poll_read(cx, buf),
+            Connect::TlsStream(stream, _, _) => Pin::new(stream).poll_read(cx, buf),
         }
     }
 }
 
-// async fn run_server(mut tcp: TcpListener, config: ServerConfig) {
-//
-// let stream = listener.incoming().filter_map(|stream| {
-//     let config = config.clone();
-//     async move {
-//         let mut stream = match stream {
-//             Ok(s) => s,
-//             Err(_) => return None,
-//         };
-//
-//         let has_https = config.sites.iter().any(|item| item.https.is_some());
-//         if !has_https {
-//             return Some(Ok::<_, hyper::Error>(Req::Stream(stream, config.sites)));
-//         }
-//         let mut buf = [0; 1];
-//         let is_https = match stream.peek(&mut buf).await {
-//             Ok(_) => buf[0] == 22,
-//             Err(_) => return None,
-//         };
-//         if is_https {
-//             // bug
-//             let configs = config
-//                 .sites
-//                 .iter()
-//                 .filter(|item| item.https.is_some())
-//                 .cloned()
-//                 .collect::<Vec<SiteConfig>>();
-//             let config = configs[0].clone();
-//             let tls = config.https.as_ref().unwrap();
-//             // can accept
-//             if let Ok(stream) = tls.acceptor.accept(stream).await {
-//                 return Some(Ok::<_, hyper::Error>(Req::TlsStream(stream, configs)));
-//             }
-//         } else {
-//             let mut s = vec![];
-//             for item in config.sites {
-//                 if item.https.is_none() {
-//                     s.push(item);
-//                 }
-//             }
-//             return Some(Ok::<_, hyper::Error>(Req::Stream(stream, s)));
-//         }
-//         None
-//     }
-// });
-// }
+impl AsyncWrite for Connect {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        match self.get_mut() {
+            Connect::Stream(stream, _, _) => Pin::new(stream).poll_write(cx, buf),
+            Connect::TlsStream(stream, _, _) => Pin::new(stream).poll_write(cx, buf),
+        }
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        match self.get_mut() {
+            Connect::Stream(stream, _, _) => Pin::new(stream).poll_flush(cx),
+            Connect::TlsStream(stream, _, _) => Pin::new(stream).poll_flush(cx),
+        }
+    }
+
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        match self.get_mut() {
+            Connect::Stream(stream, _, _) => Pin::new(stream).poll_shutdown(cx),
+            Connect::TlsStream(stream, _, _) => Pin::new(stream).poll_shutdown(cx),
+        }
+    }
+}

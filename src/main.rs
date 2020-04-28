@@ -2,35 +2,34 @@ mod accept;
 mod base64;
 mod compress;
 mod config;
-mod connect;
 mod connector;
-mod daemon;
 mod directory;
 mod file;
-mod kill;
-mod logger;
 mod matcher;
-mod mime;
+mod process;
 mod util;
 mod var;
 mod yaml;
 
 use ace::App;
 use bright::Colorful;
-use config::default;
-use config::{AbsolutePath, Force, PathExtension};
-use config::{Directory, Proxy, RewriteStatus, ServerConfig, Setting, SiteConfig, StatusPage};
+use config::{
+    default, mime, AbsolutePath, Directory, Force, PathExtension, Proxy, RewriteStatus,
+    ServerConfig, Setting, SiteConfig, StatusPage,
+};
 use connector::Connector;
-use daemon::{start_daemon, stop_daemon};
 use file::create_file_body;
+use futures::future::join_all;
 use hyper::header::{
     HeaderName, HeaderValue, ACCEPT_ENCODING, ALLOW, AUTHORIZATION, CONTENT_ENCODING,
     CONTENT_LENGTH, CONTENT_TYPE, HOST, LOCATION, SERVER, WWW_AUTHENTICATE,
 };
 use hyper::http::response::Builder;
+use hyper::Result as HyperResult;
 use hyper::{Body, Client, HeaderMap, Method, Request, Response, StatusCode, Uri, Version};
 use lazy_static::lazy_static;
 use matcher::HostMatcher;
+use process::{start_daemon, stop_daemon};
 use regex::Regex;
 use std::net::{IpAddr, SocketAddr};
 use std::path::{Path, PathBuf};
@@ -70,9 +69,10 @@ async fn start() {
         match cmd.as_str() {
             "start" => {
                 let arg = app.value("start").unwrap();
-                let listen = match arg.is_empty() {
-                    true => default::START_PORT.to_string(),
-                    false => arg[0].clone(),
+                let listen = if arg.is_empty() {
+                    default::START_PORT.to_string()
+                } else {
+                    arg[0].clone()
                 };
                 let addr = listen.as_str().to_socket_addr();
                 configs = vec![default::quick_start_config(util::current_dir(), addr)];
@@ -123,7 +123,8 @@ async fn start() {
     }
 
     if app.is("start") {
-        quick_start_info(configs[0].listen, configs[0].sites[0].root.clone().unwrap());
+        let root = configs[0].sites[0].root.clone().unwrap();
+        quick_start_info(configs[0].listen, root);
     }
 
     bind_tcp(configs).await;
@@ -135,7 +136,7 @@ fn quick_start_info(listen: SocketAddr, path: PathBuf) {
         path.display().to_string().yellow().bold()
     );
     let port = match listen.port() {
-        80 => String::with_capacity(0),
+        80 => String::new(),
         _ => format!(":{}", listen.port()),
     };
     println!(
@@ -150,77 +151,90 @@ async fn bind_tcp(configs: Vec<ServerConfig>) {
     for config in configs {
         let listener = TcpListener::bind(&config.listen)
             .await
-            .unwrap_or_else(|err| exit!("Cannot bind to address: {}\n{:?}", &config.listen, err));
+            .unwrap_or_else(|err| exit!("Cannot bind to address: '{}'\n{:?}", &config.listen, err));
 
         servers.push(accept::run(listener, config));
     }
 
-    futures::future::join_all(servers).await;
+    join_all(servers).await;
 }
 
-trait BuilderFromStatus {
-    fn from_status(self, status: StatusCode) -> Response<Body>;
+// Response content is the current status
+trait IntoStatus {
+    fn into_status(self, status: StatusCode) -> Response<Body>;
 }
-impl BuilderFromStatus for Builder {
-    fn from_status(self, status: StatusCode) -> Response<Body> {
+impl IntoStatus for Builder {
+    fn into_status(self, status: StatusCode) -> Response<Body> {
+        let body = Body::from(status.to_string());
+
         self.status(status)
             .header(CONTENT_TYPE, mime::TEXT_PLAIN)
-            .body(Body::from(status.to_string()))
+            .body(body)
             .unwrap()
     }
 }
 
+// Handle client requests
 pub async fn connect(
-    req: hyper::Request<Body>,
+    req: Request<Body>,
     ip: IpAddr,
     configs: Vec<SiteConfig>,
-) -> hyper::Result<Response<Body>> {
-    response(req, ip, configs).await.map(|mut res| {
-        res.headers_mut()
-            .insert(SERVER, HeaderValue::from_static(default::SERVER_NAME));
-        res
-    })
+) -> HyperResult<Response<Body>> {
+    let mut res = response(req, ip, configs).await;
+
+    // Add server name for all responses
+    res.headers_mut()
+        .insert(SERVER, HeaderValue::from_static(default::SERVER_NAME));
+
+    Ok(res)
 }
 
-lazy_static! {
-    static ref REGEX_PORT: Regex = Regex::new(r"(:\d+)$").unwrap();
-}
+async fn response(req: Request<Body>, remote: IpAddr, configs: Vec<SiteConfig>) -> Response<Body> {
+    let host = req.headers().get(HOST).map(|header| {
+        // Delete port
+        header
+            .to_str()
+            .unwrap_or_default()
+            .split(':')
+            .next()
+            .unwrap_or_default()
+    });
 
-async fn response(
-    req: hyper::Request<Body>,
-    remote: IpAddr,
-    configs: Vec<SiteConfig>,
-) -> hyper::Result<Response<Body>> {
-    if let Some(host) = req.headers().get(HOST) {
-        let host = host.to_str().unwrap();
-        let reg: &Regex = &REGEX_PORT;
-        let host = &reg.replacen(host, 1, "").to_string();
+    // A Host header field must be sent in all HTTP/1.1 request messages
+    // https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Host
+    if host.is_none() && req.version() == Version::HTTP_11 {
+        return Response::builder().into_status(StatusCode::BAD_REQUEST);
+    }
 
-        for config in configs.iter() {
-            if config.host.is_match(host) {
-                let mut config = config.clone();
-                return Ok(handle(req, remote, &mut config)
-                    .await
-                    .append_headers(config.headers));
+    let mut opt = None;
+    match host {
+        // Use the host in config to match the header host
+        Some(host) => {
+            for config in configs {
+                if config.host.is_match(host) {
+                    opt = Some(config);
+                    break;
+                }
             }
         }
-    } else if req.version() == Version::HTTP_11 {
-        // A Host header field must be sent in all HTTP/1.1 request messages
-        // https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Host
-
-        return Ok(Response::builder().from_status(StatusCode::BAD_REQUEST));
-    }
-
-    for config in configs {
-        if config.host.is_empty() {
-            let mut config = config;
-            return Ok(handle(req, remote, &mut config)
-                .await
-                .append_headers(config.headers));
+        // No header host
+        None => {
+            for config in configs {
+                if config.host.is_empty() {
+                    opt = Some(config);
+                    break;
+                }
+            }
         }
-    }
+    };
 
-    Ok(Response::builder().from_status(StatusCode::FORBIDDEN))
+    match opt {
+        Some(config) => {
+            let headers = config.headers.clone();
+            handle(req, remote, config).await.append_headers(headers)
+        }
+        None => Response::builder().into_status(StatusCode::FORBIDDEN),
+    }
 }
 
 trait AppendHeaders {
@@ -236,65 +250,43 @@ impl AppendHeaders for Response<Body> {
     }
 }
 
-async fn proxy_response(mut req: Request<Body>, c: Proxy, config: &SiteConfig) -> Response<Body> {
-    let encoding = req.headers().get(ACCEPT_ENCODING).map(|d| d.clone());
+async fn handle(req: Request<Body>, ip: IpAddr, mut config: SiteConfig) -> Response<Body> {
+    // Decode request path
+    let req_path = percent_encoding::percent_decode_str(req.uri().path())
+        .decode_utf8_lossy()
+        .to_string();
 
-    let uri = util::rand(c.uri).unwrap_or_else(|s, r| {
-        let result = s.as_str().replace_var(&r, &req);
-        result.parse::<Uri>().unwrap()
-    });
-
-    *req.uri_mut() = uri;
-    if let Some(method) = c.method {
-        *req.method_mut() = method;
-    }
-    if let Setting::Value(headers) = c.headers {
-        req.headers_mut().extend(headers);
-    }
-
-    let is_https = req.uri().scheme_str() == Some("https");
-    let client = Client::builder().build::<_, Body>(Connector::new(is_https));
-
-    match client.request(req).await {
-        Ok(res) => res,
-        Err(_) => {
-            // 502
-            output_error(encoding.as_ref(), &config, StatusCode::BAD_GATEWAY).await
-        }
-    }
-}
-
-async fn handle(req: Request<Body>, ip: IpAddr, config: &mut SiteConfig) -> Response<Body> {
     // Merge location to config
     if !config.location.is_empty() {
-        merge_location(req.uri().path(), config);
+        config = merge_location(&req_path, config);
     }
 
-    if let Setting::Value(log) = &mut config.log {
-        log.logger.write(req.uri().path()).await;
+    // Record request log
+    if let Setting::Value(logger) = &mut config.log {
+        logger.write(&req).await;
     }
 
     // IP allow and deny
     if let Setting::Value(matcher) = &config.ip {
         if !matcher.is_pass(ip) {
-            return Response::builder().from_status(StatusCode::FORBIDDEN);
+            return Response::builder().into_status(StatusCode::FORBIDDEN);
         }
     }
 
     // HTTP auth
     if let Setting::Value(auth) = &config.auth {
         let authorization = req.headers().get(AUTHORIZATION);
-        const MESSAGE: &str = "Basic realm=\"User Visible Realm\"";
+
         if let Some(value) = authorization {
             if value != auth {
                 return Response::builder()
-                    .header(WWW_AUTHENTICATE, MESSAGE)
-                    .from_status(StatusCode::UNAUTHORIZED);
+                    .header(WWW_AUTHENTICATE, default::AUTH_MESSAGE)
+                    .into_status(StatusCode::UNAUTHORIZED);
             }
         } else {
             return Response::builder()
-                .header(WWW_AUTHENTICATE, MESSAGE)
-                .from_status(StatusCode::UNAUTHORIZED);
+                .header(WWW_AUTHENTICATE, default::AUTH_MESSAGE)
+                .into_status(StatusCode::UNAUTHORIZED);
         }
     }
 
@@ -303,30 +295,27 @@ async fn handle(req: Request<Body>, ip: IpAddr, config: &mut SiteConfig) -> Resp
         return proxy_response(req, proxy.clone(), &config).await;
     }
 
-    // Not allowed method
-    let allow = match &config.methods {
-        Setting::Value(methods) => methods.iter().any(|m| m == req.method()),
-        _ => false,
-    };
-    if !allow {
-        if req.method() == Method::OPTIONS {
-            let methods = match &config.methods {
-                Setting::Value(values) => values
+    // Not allowed request method
+    if let Setting::Value(methods) = &config.methods {
+        if !methods.contains(req.method()) {
+            // Show allowed methods in header
+            if req.method() == Method::OPTIONS {
+                let allow = methods
                     .iter()
                     .map(|m| m.as_str())
                     .collect::<Vec<&str>>()
-                    .join(", "),
-                _ => String::with_capacity(0),
-            };
-            return Response::builder()
-                .header(ALLOW, methods)
-                .from_status(StatusCode::METHOD_NOT_ALLOWED);
-        } else {
-            return Response::builder().from_status(StatusCode::METHOD_NOT_ALLOWED);
+                    .join(", ");
+
+                return Response::builder()
+                    .header(ALLOW, allow)
+                    .into_status(StatusCode::METHOD_NOT_ALLOWED);
+            }
+
+            return Response::builder().into_status(StatusCode::METHOD_NOT_ALLOWED);
         }
     }
 
-    // echo
+    // echo: Output plain text
     if let Setting::Value(echo) = &config.echo {
         let echo = echo
             .clone()
@@ -356,7 +345,7 @@ async fn handle(req: Request<Body>, ip: IpAddr, config: &mut SiteConfig) -> Resp
             .unwrap();
     }
 
-    let cur_path = String::from(".") + req.uri().path();
+    let cur_path = format!(".{}", req_path);
     let path = match &config.root {
         Some(root) => {
             // file
@@ -371,7 +360,7 @@ async fn handle(req: Request<Body>, ip: IpAddr, config: &mut SiteConfig) -> Resp
             if let Setting::Value(p) = &config.file {
                 p.clone()
             } else {
-                return output_error(
+                return response_error_page(
                     req.headers().get(ACCEPT_ENCODING),
                     &config,
                     StatusCode::NOT_FOUND,
@@ -384,22 +373,18 @@ async fn handle(req: Request<Body>, ip: IpAddr, config: &mut SiteConfig) -> Resp
     match fs::metadata(&path).await {
         Ok(meta) => {
             if meta.is_dir() {
-                if req.uri().path().chars().last().unwrap_or('.') == '/' {
+                if req_path.ends_with('/') {
                     if let Setting::Value(option) = &config.directory {
-                        let html = directory::render_dir_html(
-                            &path,
-                            &req.uri().path(),
-                            &option.time,
-                            option.size,
-                        )
-                        .await;
+                        let html =
+                            directory::render_dir_html(&path, &req_path, &option.time, option.size)
+                                .await;
                         return match html {
                             Ok(html) => Response::builder()
                                 .header(CONTENT_TYPE, mime::TEXT_HTML)
                                 .body(Body::from(html))
                                 .unwrap(),
                             Err(_) => {
-                                output_error(
+                                response_error_page(
                                     req.headers().get(ACCEPT_ENCODING),
                                     &config,
                                     StatusCode::FORBIDDEN,
@@ -412,7 +397,7 @@ async fn handle(req: Request<Body>, ip: IpAddr, config: &mut SiteConfig) -> Resp
                         if !index.is_empty() {
                             match index_back(&path, &index).await {
                                 Some((file, ext)) => {
-                                    return file_response(
+                                    return response_file(
                                         StatusCode::OK,
                                         file,
                                         Some(&ext),
@@ -422,7 +407,7 @@ async fn handle(req: Request<Body>, ip: IpAddr, config: &mut SiteConfig) -> Resp
                                     .await
                                 }
                                 None => {
-                                    return output_error(
+                                    return response_error_page(
                                         req.headers().get(ACCEPT_ENCODING),
                                         &config,
                                         StatusCode::NOT_FOUND,
@@ -432,7 +417,7 @@ async fn handle(req: Request<Body>, ip: IpAddr, config: &mut SiteConfig) -> Resp
                             }
                         }
                     }
-                    return output_error(
+                    return response_error_page(
                         req.headers().get(ACCEPT_ENCODING),
                         &config,
                         StatusCode::NOT_FOUND,
@@ -441,9 +426,9 @@ async fn handle(req: Request<Body>, ip: IpAddr, config: &mut SiteConfig) -> Resp
                 } else {
                     let aims;
                     if let Some(query) = req.uri().query() {
-                        aims = format!("{}/{}", req.uri().path(), query);
+                        aims = format!("{}/{}", &req_path, query);
                     } else {
-                        aims = format!("{}/", req.uri().path());
+                        aims = format!("{}/", &req_path);
                     }
                     return Response::builder()
                         .status(StatusCode::MOVED_PERMANENTLY)
@@ -454,7 +439,7 @@ async fn handle(req: Request<Body>, ip: IpAddr, config: &mut SiteConfig) -> Resp
             } else {
                 match File::open(&path).await {
                     Ok(file) => {
-                        return file_response(
+                        return response_file(
                             StatusCode::OK,
                             file,
                             path.get_extension(),
@@ -464,7 +449,7 @@ async fn handle(req: Request<Body>, ip: IpAddr, config: &mut SiteConfig) -> Resp
                         .await;
                     }
                     Err(_) => {
-                        return output_error(
+                        return response_error_page(
                             req.headers().get(ACCEPT_ENCODING),
                             &config,
                             StatusCode::INTERNAL_SERVER_ERROR,
@@ -476,7 +461,7 @@ async fn handle(req: Request<Body>, ip: IpAddr, config: &mut SiteConfig) -> Resp
         }
         Err(_) => match fallbacks(&path, &config.extensions).await {
             Some((file, ext)) => {
-                return file_response(
+                return response_file(
                     StatusCode::OK,
                     file,
                     Some(&ext),
@@ -486,7 +471,7 @@ async fn handle(req: Request<Body>, ip: IpAddr, config: &mut SiteConfig) -> Resp
                 .await
             }
             None => {
-                return output_error(
+                return response_error_page(
                     req.headers().get(ACCEPT_ENCODING),
                     &config,
                     StatusCode::NOT_FOUND,
@@ -497,25 +482,25 @@ async fn handle(req: Request<Body>, ip: IpAddr, config: &mut SiteConfig) -> Resp
     };
 }
 
-fn merge_location(route: &str, config: &mut SiteConfig) {
-    for item in &config.location {
+fn merge_location(route: &str, mut config: SiteConfig) -> SiteConfig {
+    for item in config.location {
         if !item.location.is_match(route) {
             continue;
         }
         if item.root.is_some() {
-            config.root = item.root.clone();
+            config.root = item.root;
         }
         if !item.echo.is_none() {
-            config.echo = item.echo.clone();
+            config.echo = item.echo;
         }
         if !item.file.is_none() {
-            config.file = item.file.clone();
+            config.file = item.file;
         }
         if !item.index.is_none() {
-            config.index = item.index.clone();
+            config.index = item.index;
         }
         if !item.directory.is_none() {
-            config.directory = item.directory.clone();
+            config.directory = item.directory;
         }
         if !item.headers.is_none() {
             if let Setting::Value(header) = &item.headers {
@@ -527,53 +512,82 @@ fn merge_location(route: &str, config: &mut SiteConfig) {
             }
         }
         if !item.rewrite.is_none() {
-            config.rewrite = item.rewrite.clone();
+            config.rewrite = item.rewrite;
         }
         if !item.compress.is_none() {
-            config.compress = item.compress.clone();
+            config.compress = item.compress;
         }
         if !item.methods.is_none() {
-            config.methods = item.methods.clone();
+            config.methods = item.methods;
         }
         if !item.auth.is_none() {
-            config.auth = item.auth.clone();
+            config.auth = item.auth;
         }
         if !item.extensions.is_none() {
-            config.extensions = item.extensions.clone();
+            config.extensions = item.extensions;
         }
         if !item.proxy.is_none() {
-            config.proxy = item.proxy.clone();
+            config.proxy = item.proxy;
         }
         if !item.log.is_none() {
-            config.log = item.log.clone();
+            config.log = item.log;
         }
         if !item.ip.is_none() {
-            config.ip = item.ip.clone();
+            config.ip = item.ip;
         }
         if !item.buffer.is_none() {
-            config.buffer = item.buffer.clone();
+            config.buffer = item.buffer;
         }
         if !item.status._403.is_none() {
-            config.status._403 = item.status._403.clone();
+            config.status._403 = item.status._403;
         }
         if !item.status._404.is_none() {
-            config.status._404 = item.status._404.clone();
+            config.status._404 = item.status._404;
         }
         if !item.status._500.is_none() {
-            config.status._500 = item.status._500.clone();
+            config.status._500 = item.status._500;
         }
         if !item.status._502.is_none() {
-            config.status._502 = item.status._502.clone();
+            config.status._502 = item.status._502;
         }
-
         if item.break_ {
             break;
         }
     }
-    config.location.clear();
+
+    config.location = Vec::with_capacity(0);
+    config
 }
 
-async fn output_error(
+async fn proxy_response(mut req: Request<Body>, c: Proxy, config: &SiteConfig) -> Response<Body> {
+    let encoding = req.headers().get(ACCEPT_ENCODING).cloned();
+
+    let uri = util::rand(&c.uri).clone().unwrap_or_else(|s, r| {
+        let result = s.as_str().replace_var(&r, &req);
+        result.parse::<Uri>().unwrap()
+    });
+
+    *req.uri_mut() = uri;
+    if let Some(method) = c.method {
+        *req.method_mut() = method;
+    }
+    if let Setting::Value(headers) = c.headers {
+        req.headers_mut().extend(headers);
+    }
+
+    let is_https = req.uri().scheme_str() == Some("https");
+    let client = Client::builder().build::<_, Body>(Connector::new(is_https));
+
+    match client.request(req).await {
+        Ok(res) => res,
+        Err(_) => {
+            // 502
+            response_error_page(encoding.as_ref(), &config, StatusCode::BAD_GATEWAY).await
+        }
+    }
+}
+
+async fn response_error_page(
     encoding: Option<&HeaderValue>,
     config: &SiteConfig,
     status: StatusCode,
@@ -588,15 +602,15 @@ async fn output_error(
     if let Setting::Value(path) = path {
         if path.is_file() {
             if let Ok(f) = File::open(&path).await {
-                return file_response(status, f, path.get_extension(), encoding, &config).await;
+                return response_file(status, f, path.get_extension(), encoding, &config).await;
             }
         }
     }
 
-    Response::builder().from_status(status)
+    Response::builder().into_status(status)
 }
 
-async fn file_response(
+async fn response_file(
     status: StatusCode,
     file: File,
     ext: Option<&str>,
@@ -656,13 +670,13 @@ async fn fallbacks(file: &PathBuf, exts: &Setting<Vec<String>>) -> Option<(File,
     None
 }
 
-async fn index_back(root: &PathBuf, files: &Vec<String>) -> Option<(File, String)> {
+async fn index_back(root: &PathBuf, files: &[String]) -> Option<(File, String)> {
     for name in files {
         let path = name.absolute_path(root);
         if path.is_file() {
             if let Ok(file) = File::open(&path).await {
-                if let Some(s) = &path.get_extension() {
-                    return Some((file, s.to_string()));
+                if let Some(ext) = path.get_extension() {
+                    return Some((file, ext.to_string()));
                 }
             }
         }

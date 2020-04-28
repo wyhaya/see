@@ -1,6 +1,7 @@
 use crate::config::default;
+use crate::config::tls::{create_sni_server_config, TLSContent};
 use crate::config::Force;
-use crate::logger::Logger;
+use crate::config::Logger;
 use crate::util::*;
 use crate::var::{ToVar, Var};
 use crate::*;
@@ -10,12 +11,8 @@ use compress::{CompressLevel, CompressMode, Encoding};
 use hyper::{Method, Uri};
 use matcher::{HostMatcher, IpMatcher, LocationMatcher};
 use std::fs;
-use std::io::BufReader;
 use std::path::Path;
-use std::sync::Arc;
 use std::time::Duration;
-use tokio_rustls::rustls::internal::pemfile::{certs, rsa_private_keys};
-use tokio_rustls::rustls::{NoClientAuth, ServerConfig as Config};
 use tokio_rustls::TlsAcceptor;
 use yaml::YamlExtend;
 use yaml_rust::{Yaml, YamlLoader};
@@ -61,12 +58,13 @@ impl<T: Default> Setting<T> {
 #[derive(Clone)]
 pub struct ServerConfig {
     pub listen: SocketAddr,
+    pub tls: Option<TlsAcceptor>,
     pub sites: Vec<SiteConfig>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct SiteConfig {
-    pub https: Option<TLSConfig>,
+    pub sni_name: Option<String>,
     pub host: HostMatcher,
     pub root: Option<PathBuf>,
     pub echo: Setting<Var<String>>,
@@ -81,7 +79,7 @@ pub struct SiteConfig {
     pub extensions: Setting<Vec<String>>,
     pub status: StatusPage,
     pub proxy: Setting<Proxy>,
-    pub log: Setting<Log>,
+    pub log: Setting<Logger>,
     pub ip: Setting<IpMatcher>,
     pub buffer: Setting<usize>,
     pub location: Vec<Location>,
@@ -104,14 +102,9 @@ pub struct Location {
     pub extensions: Setting<Vec<String>>,
     pub status: StatusPage,
     pub proxy: Setting<Proxy>,
-    pub log: Setting<Log>,
+    pub log: Setting<Logger>,
     pub ip: Setting<IpMatcher>,
     pub buffer: Setting<usize>,
-}
-
-#[derive(Clone)]
-pub struct TLSConfig {
-    pub acceptor: TlsAcceptor,
 }
 
 #[derive(Debug, Clone)]
@@ -210,12 +203,6 @@ pub struct Proxy {
     pub headers: Setting<HeaderMap>,
 }
 
-#[derive(Debug, Clone)]
-pub struct Log {
-    pub logger: Logger,
-    pub format: String,
-}
-
 macro_rules! setting_value {
     ($yaml: expr) => {
         setting_none!($yaml);
@@ -267,6 +254,7 @@ impl ServerConfig {
             .unwrap_or_else(|| exit!("Cannot parse `server` to array"));
 
         let mut configs: Vec<ServerConfig> = vec![];
+        let mut tls_configs: Vec<(SocketAddr, Vec<TLSContent>)> = vec![];
 
         for server in servers {
             server.check(
@@ -298,10 +286,27 @@ impl ServerConfig {
 
             let parser = Parser::new(server["server"].clone());
             let listens = parser.listen();
+            let https = parser.https(&config_dir);
+            let sni_name = https.clone().map(|d| d.sni);
+
+            if let Some(tls) = https {
+                for listen in &listens {
+                    let position = tls_configs.iter().position(|item| item.0 == *listen);
+                    match position {
+                        Some(i) => {
+                            tls_configs[i].1.push(tls.clone());
+                        }
+                        None => {
+                            tls_configs.push((*listen, vec![tls.clone()]));
+                        }
+                    }
+                }
+            }
+
             let root = parser.root(&config_dir);
 
             let site = SiteConfig {
-                https: parser.https(&config_dir),
+                sni_name,
                 host: parser.host(),
                 root: root.clone(),
                 echo: parser.echo(),
@@ -330,10 +335,21 @@ impl ServerConfig {
                     }
                     None => configs.push(ServerConfig {
                         listen,
+                        tls: None,
                         sites: vec![site.clone()],
                     }),
                 }
             }
+        }
+
+        for (listen, group) in tls_configs {
+            let group = dedup(group);
+            let i = configs
+                .iter()
+                .position(|item| item.listen == listen)
+                .unwrap();
+            let t = create_sni_server_config(group);
+            configs[i].tls = Some(t);
         }
 
         configs
@@ -430,42 +446,20 @@ impl Parser {
         dedup(vec)
     }
 
-    fn https(&self, config_dir: &Path) -> Option<TLSConfig> {
+    fn https(&self, config_dir: &Path) -> Option<TLSContent> {
         let https = &self.yaml["https"];
         if https.is_badvalue() {
             return None;
         }
 
-        self.yaml.check("https", &["cert", "key"], &["cert", "key"]);
+        self.yaml
+            .check("https", &["cert", "key", "name"], &["cert", "key", "name"]);
 
-        let certs = {
-            let p = https.key_to_string("cert").absolute_path(config_dir);
+        let cert = https.key_to_string("cert").absolute_path(config_dir);
+        let key = https.key_to_string("key").absolute_path(config_dir);
+        let sni = https.key_to_string("name");
 
-            let file = fs::File::open(&p)
-                .unwrap_or_else(|err| exit!("Cannot open file: {}\n{:?}", p.display(), err));
-
-            certs(&mut BufReader::new(file))
-                .unwrap_or_else(|_| exit!("invalid cert: {}", p.display()))
-        };
-
-        let mut keys = {
-            let p = https.key_to_string("key").absolute_path(config_dir);
-
-            let file = fs::File::open(&p)
-                .unwrap_or_else(|err| exit!("Cannot open file: {}\n{:?}", p.display(), err));
-
-            rsa_private_keys(&mut BufReader::new(file))
-                .unwrap_or_else(|_| exit!("invalid key: {}", p.display()))
-        };
-
-        let mut config = Config::new(NoClientAuth::new());
-        config
-            .set_single_cert(certs, keys.remove(0))
-            .unwrap_or_else(|err| exit!("TLSError: {:?}", err));
-
-        Some(TLSConfig {
-            acceptor: TlsAcceptor::from(Arc::new(config)),
-        })
+        Some(TLSContent { cert, key, sni })
     }
 
     fn host(&self) -> HostMatcher {
@@ -503,7 +497,7 @@ impl Parser {
         if set_default {
             setting_none!(
                 index,
-                default::INDEX.iter().map(|i| i.to_string()).collect()
+                default::INDEX.iter().map(|i| (*i).to_string()).collect()
             );
         } else {
             setting_none!(index);
@@ -592,7 +586,7 @@ impl Parser {
                 modes: vec![Encoding::Auto(default::COMPRESS_LEVEL)],
                 extensions: default::COMPRESS_EXTENSIONS
                     .iter()
-                    .map(|e| e.to_string())
+                    .map(|e| (*e).to_string())
                     .collect(),
             });
         }
@@ -616,7 +610,7 @@ impl Parser {
         let extensions = if compress["extension"].is_badvalue() {
             default::COMPRESS_EXTENSIONS
                 .iter()
-                .map(|e| e.to_string())
+                .map(|e| (*e).to_string())
                 .collect()
         } else {
             compress.key_to_multiple_string("extension")
@@ -739,19 +733,17 @@ impl Parser {
         })
     }
 
-    async fn log<P: AsRef<Path>>(&self, root: P) -> Setting<Log> {
+    async fn log<P: AsRef<Path>>(&self, root: P) -> Setting<Logger> {
         let log = &self.yaml["log"];
         setting_value!(log);
 
         if let Some(path) = log.try_to_string() {
-            let logger = Logger::new()
+            let logger = Logger::new(default::LOG_FORMAT.to_string())
                 .file(path.absolute_path(root))
                 .await
                 .unwrap_or_else(|err| exit!("Init logger failed:\n{:?}", err));
-            return Setting::Value(Log {
-                logger,
-                format: default::LOG_FORMAT.to_string(),
-            });
+
+            return Setting::Value(logger);
         }
 
         self.yaml.check("log", &["mode", "file", "format"], &[]);
@@ -765,20 +757,15 @@ impl Parser {
         let mode = log.key_to_string("mode");
 
         match mode.as_ref() {
-            "stdout" => Setting::Value(Log {
-                format: format_,
-                logger: Logger::new().stdout(),
-            }),
+            "stdout" => Setting::Value(Logger::new(format_).stdout()),
             "file" => {
                 let path = log.key_to_string("log file");
-                let logger = Logger::new()
+                let logger = Logger::new(format_)
                     .file(path.absolute_path(root))
                     .await
                     .unwrap_or_else(|err| exit!("Init logger failed:\n{:?}", err));
-                Setting::Value(Log {
-                    format: format_,
-                    logger,
-                })
+
+                Setting::Value(logger)
             }
             _ => exit!("Wrong log mode `{}`, optional value: `stdout` `file`", mode),
         }

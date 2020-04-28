@@ -59,8 +59,14 @@ fn to_binary(mut n: u8) -> Vec<u8> {
 #[cfg(test)]
 mod test {
 
+    use super::*;
     #[test]
-    fn to_encode() {}
+    fn test_encode() {
+        assert_eq!(encode("0"), "MA==");
+        assert_eq!(encode("123"), "MTIz");
+        assert_eq!(encode("123456789"), "MTIzNDU2Nzg5");
+        assert_eq!(encode("abcdefg"), "YWJjZGVmZw==");
+    }
 
     #[test]
     fn to_decimal() {}

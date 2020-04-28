@@ -2,9 +2,9 @@
 # Options
 
 * [listen](#listen)
+* [https](#https)
 * [host](#host)
-* [https](#https) <sup>todo</sup>
-* [root](#root)  
+* [root](#root)
 * [echo](#echo)
 * [file](#file)
 * [rewrite](#rewrite)
@@ -23,23 +23,9 @@
 * [location](#location)
 * [var](#var)
 
-### host
-
-Host binding to the site
-
-```yaml
-host: exmaple.com    # Exact match
-# or
-host: ~/*.go+gle.com  # Regular match => photo.goooogle.com
-# or
-host:                # Multiple
-  - example.*
-  - *.exmaple.com
-```
-
 ### listen
 
-Port to be monitored
+Bind to socket address
 
 ```yaml
 listen: 80  # 0.0.0.0
@@ -55,8 +41,23 @@ HTTPS option
 
 ```yaml
 https:
+  name: domain.com
   key: /root/ssl.key
   cert: /root/ssl.pem
+```
+
+### host
+
+Match http header host
+
+```yaml
+host: exmaple.com    # Exact match
+# or
+host: ~/*.go+gle.com  # Regular match => photo.goooogle.com
+# or
+host:                # Multiple
+  - example.*
+  - *.exmaple.com
 ```
 
 ### root
@@ -85,23 +86,21 @@ Output specified file
 file: ./www/index.html
 ```
 
-### index
+### rewrite
+  
+HTTP rewrite config
 
-Index file, default: index.html index.htm
- 
 ```yaml
-index: []
+rewrite: https://example.com     # Default 302
 # or
-index: index.html
+rewrite: /example 301
 # or
-index:
-  - index.html
-  - index.htm
+rewrite: /example 302
 ```
 
 ### directory
 
-File list option
+File list options
 
 ```yaml
 # Show directory only
@@ -114,28 +113,6 @@ directory:
 # Display file size
 directory:
   size: true | false
-```
-
-### header
-
-Header in response
-
-```yaml
-header:    
-  Access-Control-Allow-Origin: "*"
-  Set-Cookie: "12345"
-```
-
-### rewrite
-  
-HTTP rewrite config
-
-```yaml
-rewrite: https://example.com     # 
-# or
-rewrite: /example 301
-# or
-rewrite: /example 302
 ```
 
 ### compress
@@ -154,6 +131,30 @@ compress:
 # or
 compress:         
   mode: br gzip auto     # Set compression priority
+```
+
+### index
+
+Index file, default: index.html index.htm
+ 
+```yaml
+index: []
+# or
+index: index.html
+# or
+index:
+  - index.html
+  - index.htm
+```
+
+### header
+
+Header in response
+
+```yaml
+header:    
+  Access-Control-Allow-Origin: "*"
+  Set-Cookie: "12345"
 ```
 
 ### method
@@ -272,10 +273,16 @@ location:
     directory:
       time: true
       size: true
-  /private:
+  /private/**:
     auth:
       user: username
       password: password
+  ~[1-9]{10}:
+    echo: Match regex
+  ^start:
+    echo: Match start
+  $.png:
+    echo: Match end
 ```
 
 ### var

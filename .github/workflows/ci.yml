@@ -1,0 +1,118 @@
+name: Build
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    name: Build in ${{ matrix.platform.name }}
+    runs-on: ${{ matrix.platform.os }}
+    strategy:
+      matrix:
+        platform:
+        - { os: windows-latest, name: windows }
+        - { os: ubuntu-latest, name: linux }
+        - { os: macos-latest, name: macos }
+
+    env:
+      NAME: see
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Install Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          components: rustfmt, clippy
+
+      - name: Cache cargo registry
+        uses: actions/cache@v1
+        with:
+          path: ~/.cargo/registry
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Cache cargo index
+        uses: actions/cache@v1
+        with:
+          path: ~/.cargo/git
+          key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Cache cargo build
+        uses: actions/cache@v1
+        with:
+          path: target
+          key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Cargo fmt
+        uses: actions-rs/cargo@v1
+        with:
+          command: fmt
+          args: --all -- --check
+
+#      - name: Cargo clippy
+#        uses: actions-rs/cargo@v1
+#        with:
+#          command: clippy
+#          args: -- -D warnings
+
+      - name: Cargo test
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --release
+
+      - name: Cargo build
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --release
+
+      - name: Upload artifact (unix)
+        if: matrix.platform.name != 'windows'
+        uses: actions/upload-artifact@v2-preview
+        with:
+          name: ${{ env.NAME }}-${{ matrix.platform.name }}
+          path: ./target/release/${{ env.NAME }}
+
+      - name: Upload artifact (windows)
+        if: matrix.platform.name == 'windows'
+        uses: actions/upload-artifact@v2-preview
+        with:
+          name: ${{ env.NAME }}-${{ matrix.platform.name }}.exe
+          path: ./target/release/${{ env.NAME }}.exe
+
+      # -------------- Release --------------
+
+      - name: Get release version (windows)
+        if: startsWith(github.ref, 'refs/tags/') && matrix.platform.name == 'windows'
+        id: GITHUB_RELEASE
+        shell: bash
+        run: echo ::set-output name=TAG::${GITHUB_REF:10}
+
+      - name: Package zip (unix)
+        if: startsWith(github.ref, 'refs/tags/') && matrix.platform.name != 'windows'
+        run: |
+          cd ./target/release/
+          zip ${{ env.NAME }}-${GITHUB_REF:10}-${{ matrix.platform.name }}.zip ${{ env.NAME }}
+
+      - name: Package zip (windows)
+        if: startsWith(github.ref, 'refs/tags/') && matrix.platform.name == 'windows'
+        run: |
+          cd ./target/release/
+          Compress-Archive -CompressionLevel Optimal -Force -Path ${{ env.NAME }}.exe -DestinationPath ${{ env.NAME }}-${{ steps.GITHUB_RELEASE.outputs.TAG }}-${{ matrix.platform.name }}.zip
+
+      - name: GitHub release
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          files: ./target/release/*.zip
+
+      - name: Cargo publish
+        uses: actions-rs/cargo@v1
+        if: startsWith(github.ref, 'refs/tags/') && matrix.platform.name == 'linux'
+        with:
+          command: publish
+          args: --token ${{ secrets.CARGO_TOKEN }} -v

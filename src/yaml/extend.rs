@@ -1,6 +1,6 @@
-use crate::util::dedup;
 use crate::*;
 use std::fmt::Display;
+use util::dedup;
 use yaml_rust::yaml::Hash;
 use yaml_rust::Yaml;
 
@@ -22,15 +22,14 @@ impl YamlExtend for Yaml {
         // Disallowed key
         for (key, _) in hash {
             let key = key.to_string(format!("{} 'key'", name));
-            let find = keys.iter().any(|item| *item == &key);
-            if !find {
+            if !keys.contains(&key.as_str()) {
                 exit!("Check failed, unknown directive `{}` in '{}'", key, name)
             }
         }
 
         // Required key
         for must in must {
-            if self[name][must.clone()].is_badvalue() {
+            if self[name][*must].is_badvalue() {
                 exit!("Missing '{}' in '{}'", must, name)
             }
         }

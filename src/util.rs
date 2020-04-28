@@ -42,12 +42,12 @@ pub fn dedup<T: Eq>(vec: Vec<T>) -> Vec<T> {
     new
 }
 
-pub fn rand<T: Clone>(vec: Vec<T>) -> T {
+pub fn rand<'a, T>(vec: &'a [T]) -> &'a T {
     if vec.len() == 1 {
-        return vec[0].clone();
+        &vec[0]
     } else {
         let i = rand::thread_rng().gen_range(0, vec.len());
-        return vec[i].clone();
+        &vec[i]
     }
 }
 
@@ -63,11 +63,11 @@ pub enum DigitalUnitError {
 impl DigitalUnitError {
     pub fn description(&self) -> &str {
         match self {
-            DigitalUnitError::NoNumber => "no number",
-            DigitalUnitError::NoUnit => "no unit",
-            DigitalUnitError::ErrorNumber => "error number",
-            DigitalUnitError::ErrorUnit => "error unit",
-            DigitalUnitError::Zero => "zero",
+            DigitalUnitError::NoNumber => "No number found",
+            DigitalUnitError::NoUnit => "No number found",
+            DigitalUnitError::ErrorNumber => "Wrong number",
+            DigitalUnitError::ErrorUnit => "Wrong unit",
+            DigitalUnitError::Zero => "Value cannot be 0",
         }
     }
 }
@@ -106,7 +106,8 @@ pub fn try_parse_duration(text: &str) -> Result<Duration, DigitalUnitError> {
     }
 }
 
-//
+// Parse size format to bytes
+// format: 1m 1.2k 10b
 pub fn try_parse_size(text: &str) -> Result<usize, DigitalUnitError> {
     let numbers = "0123456789.".chars().collect::<Vec<char>>();
     let i = text
@@ -125,7 +126,7 @@ pub fn try_parse_size(text: &str) -> Result<usize, DigitalUnitError> {
         .map_err(|_| DigitalUnitError::ErrorNumber)?;
     let size = match unit {
         "g" => Ok(n * 1024_f64 * 1024_f64 * 1024_f64),
-        "m" => Ok(n * 1024_f64 * 1204_f64),
+        "m" => Ok(n * 1024_f64 * 1024_f64),
         "k" => Ok(n * 1024_f64),
         "b" => Ok(n),
         _ => Err(DigitalUnitError::ErrorUnit),
@@ -161,18 +162,39 @@ pub fn bytes_to_size(bytes: u64) -> String {
     format!("{:.2} {}", bytes / 1024_f64.powi(i), UNITS[i as usize])
 }
 
-#[cfg(test)]
-mod test {
-    use super::*;
+#[test]
+fn test_dedup() {
+    assert_eq!(dedup(vec![1, 1]), vec![1]);
+    assert_eq!(dedup(vec![1, 2, 3]), vec![1, 2, 3]);
+}
 
-    #[test]
-    fn to_size() {
-        assert_eq!(bytes_to_size(0), "0.00 B");
-        assert_eq!(bytes_to_size(1), "1.00 B");
-        assert_eq!(bytes_to_size(1023), "1023.00 B");
-        assert_eq!(bytes_to_size(1024), "1.00 KB");
-        assert_eq!(bytes_to_size(1 * 1024 * 1024), "1.00 MB");
-        assert_eq!(bytes_to_size(1 * 1024 * 1024 * 1024 * 1024), "1.00 TB");
-        assert_eq!(bytes_to_size(u64::max_value()), "16.00 EB");
-    }
+#[test]
+fn test_try_parse_size() {
+    assert_eq!(try_parse_size("1b").unwrap(), 1);
+    assert_eq!(try_parse_size("1k").unwrap(), 1024);
+    assert_eq!(try_parse_size("1.5m").unwrap(), 1572864);
+}
+
+#[test]
+fn test_try_to_socket_addr() {
+    assert_eq!(
+        try_to_socket_addr("80").unwrap(),
+        "0.0.0.0:80".parse::<SocketAddr>().unwrap()
+    );
+    assert_eq!(
+        try_to_socket_addr("0.0.0.0:80").unwrap(),
+        "0.0.0.0:80".parse::<SocketAddr>().unwrap()
+    );
+    assert_eq!(try_to_socket_addr("err"), Err(()));
+}
+
+#[test]
+fn test_bytes_to_size() {
+    assert_eq!(bytes_to_size(0), "0.00 B");
+    assert_eq!(bytes_to_size(1), "1.00 B");
+    assert_eq!(bytes_to_size(1023), "1023.00 B");
+    assert_eq!(bytes_to_size(1024), "1.00 KB");
+    assert_eq!(bytes_to_size(1 * 1024 * 1024), "1.00 MB");
+    assert_eq!(bytes_to_size(1 * 1024 * 1024 * 1024 * 1024), "1.00 TB");
+    assert_eq!(bytes_to_size(u64::max_value()), "16.00 EB");
 }

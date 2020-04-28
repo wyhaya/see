@@ -123,7 +123,7 @@ impl ReplaceVar for &str {
                 .uri()
                 .query()
                 .map(|q| format!("?{}", q))
-                .unwrap_or(String::with_capacity(0));
+                .unwrap_or_else(|| String::with_capacity(0));
             let uri = format!("{}{}", req.uri().path(), query);
             source = source.replace(REQUEST_URI, &uri);
         }

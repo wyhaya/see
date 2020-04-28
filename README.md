@@ -1,5 +1,5 @@
 
-# see 
+# see
 
 [![GitHub Workflow Status](https://img.shields.io/github/workflow/status/wyhaya/see/Build?style=flat-square)](https://github.com/wyhaya/see/actions)
 [![Crates.io](https://img.shields.io/crates/v/see.svg?style=flat-square)](https://crates.io/crates/see)
@@ -7,13 +7,13 @@
 
 ---
 
-This is a static http file server built on `tokio` and `hyper`
+An HTTP server for hosting static files
 
-## Feature
+## Features
 
-*
-*
-*
+* Supported HTTP/1 and HTTP/2
+* Content compression (auto, gzip, deflate, br)
+* Simple and rich configuration
 
 ## Install
 
@@ -44,16 +44,16 @@ Start according to the configuration file
 ```bash
 see
 # or
-see -c /your/config.yml
+see -c config.yml
 ```
 
 ## Config
 
-Use `yaml` format as a configuration file, You can use `see -c config.yml` to specify the configuration file location.
+Use `yaml` format as a configuration file, You can use `see -c config.yml` to specify the configuration file location
 
 The default configuration file is in `~/.see/config.yml`
 
-A simple example: 
+#### A simple example: 
 
 ```yaml
 - server:
@@ -62,13 +62,11 @@ A simple example:
 
 - server:
     listen: 443
-    host: domain.com
     root: /root/www
     https:
-      key: /root/ssl.key
-      cert: /root/ssl.pem
+      name: domain.com
+      key: /your/ssl.key
+      cert: /your/ssl.pem
 ```
 
-Complete configuration documentation: [doc.md](./doc.md)
-
----
+Complete configuration documentation: [docs/index.md](docs/index.md)

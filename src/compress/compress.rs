@@ -11,7 +11,7 @@ pub enum CompressMode {
 
 impl CompressMode {
     // Response header content-encoding
-    pub fn to_header_value(&self) -> HeaderValue {
+    pub fn to_header_value(self) -> HeaderValue {
         let encoding = match self {
             CompressMode::Gzip(_) => "gzip",
             CompressMode::Deflate(_) => "deflate",

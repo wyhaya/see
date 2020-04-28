@@ -1,10 +1,54 @@
-use crate::kill::{kill, KillError};
-use crate::util::{config_dir, pid_path};
 use crate::*;
 use std::env;
 use std::fs::{self, File};
 use std::io::Write;
 use std::process::Command;
+use util::{config_dir, pid_path};
+
+// Encountered a fatal error
+// Print error message and exit the current process
+#[macro_export]
+macro_rules! exit {
+    ($($arg:tt)*) => {
+       {
+            eprint!("{}", "error: ".red().bold());
+            eprintln!($($arg)*);
+            std::process::exit(1)
+       }
+    };
+}
+
+#[derive(Debug)]
+pub enum KillError {
+    NotExist,
+    Failure,
+}
+
+#[cfg(unix)]
+pub fn kill(pid: i32) -> Result<(), KillError> {
+    if unsafe { libc::kill(pid, 0) } != 0 {
+        return Err(KillError::NotExist);
+    }
+    if unsafe { libc::kill(pid, libc::SIGTERM) } != 0 {
+        return Err(KillError::Failure);
+    }
+
+    Ok(())
+}
+
+#[cfg(windows)]
+pub fn kill(pid: i32) -> Result<(), ExitError> {
+    use winapi::um::handleapi::CloseHandle;
+    use winapi::um::processthreadsapi::{OpenProcess, TerminateProcess};
+
+    unsafe {
+        let handle = OpenProcess(1, 0, pid as u32);
+        TerminateProcess(handle, 0);
+        CloseHandle(handle);
+    }
+
+    Ok(())
+}
 
 pub fn start_daemon(detach: &str) {
     let args = env::args().collect::<Vec<String>>();

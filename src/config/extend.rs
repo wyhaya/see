@@ -7,6 +7,7 @@ use std::str::FromStr;
 use std::time::Duration;
 use util::*;
 
+// Get the extension of the path
 pub trait PathExtension {
     fn get_extension(&self) -> Option<&str>;
 }
@@ -18,6 +19,7 @@ impl PathExtension for PathBuf {
     }
 }
 
+// Convert path to absolute path
 pub trait AbsolutePath {
     fn absolute_path<P: AsRef<Path>>(&self, root: P) -> PathBuf;
 }
@@ -33,6 +35,7 @@ impl AbsolutePath for String {
     }
 }
 
+// Force conversion of string to specified type
 pub trait Force {
     fn to_duration(&self) -> Duration;
     fn to_size(&self) -> usize;

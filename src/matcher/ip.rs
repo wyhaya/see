@@ -51,13 +51,13 @@ impl IpMatcher {
         if !self.allow.is_empty() {
             return self.allow.iter().any(|m| m.is_match(&ip));
         }
-        return self.deny.iter().all(|m| !m.is_match(&ip));
+        self.deny.iter().all(|m| !m.is_match(&ip))
     }
 }
 
 #[cfg(test)]
 mod test {
-    use super::*;
+    // use super::*;
 
     #[test]
     fn ip() {}

@@ -1,9 +1,11 @@
 use crate::util::bytes_to_size;
+use futures::future::try_join_all;
 use std::path::PathBuf;
 use std::time::UNIX_EPOCH;
 use time::Timespec;
 use tokio::fs;
-use tokio::io::Result;
+use tokio::fs::DirEntry;
+use tokio::io::{self, Error, ErrorKind, Result};
 use tokio::stream::StreamExt;
 
 // HTML directory template
@@ -15,7 +17,7 @@ const TEMPLATE: &str = r#"<!DOCTYPE html>
     <title>Index of {title}</title>
     <style>
         body {
-            font-family: "Segoe UI",Segoe,Tahoma,Arial,Verdana,sans-serif;
+            font-family: "Segoe UI", Segoe,Tahoma,Arial, Verdana, sans-serif;
             padding: 0 16px 0;
             margin: 0;
         }
@@ -69,63 +71,32 @@ const TEMPLATE: &str = r#"<!DOCTYPE html>
 "#;
 
 pub async fn render_dir_html(
-    path: &PathBuf,
+    dir_path: &PathBuf,
     title: &str,
-    time: &Option<String>,
-    size: bool,
-) -> Result<String> {
-    let mut dir = fs::read_dir(path).await?;
+    show_time: &Option<String>,
+    show_size: bool,
+) -> io::Result<String> {
+    let mut dir = fs::read_dir(dir_path).await?;
     let mut content = String::new();
+    let mut fus = vec![];
 
     while let Some(entry) = dir.next().await {
-        let entry = entry?.path();
-
-        match entry.file_name() {
-            Some(d) => match d.to_str() {
-                Some(name) => {
-                    if entry.is_dir() {
-                        content.push_str(&format!("<a href=\"{}/\">{}/</a>", name, name));
-                    } else {
-                        content.push_str(&format!("<a href=\"{}\">{}</a>", name, name));
-                    }
-                }
-                None => continue,
-            },
-            None => continue,
-        };
-
-        if time.is_some() || size {
-            let meta = fs::metadata(&entry).await?;
-
-            if let Some(format) = &time {
-                let dur = meta.modified()?.duration_since(UNIX_EPOCH).unwrap();
-                let spec = Timespec::new(dur.as_secs() as i64, dur.subsec_nanos() as i32);
-
-                content.push_str(&format!(
-                    "<time>{}</time>",
-                    time::at(spec).strftime(format).unwrap()
-                ));
-            }
-
-            if size {
-                if entry.is_file() {
-                    content.push_str(&format!("<span>{}</span>", bytes_to_size(meta.len())));
-                } else {
-                    content.push_str("<span></span>");
-                }
-            }
-        }
+        let entry = entry?;
+        fus.push(get_item_content(entry, &show_time, show_size));
     }
 
-    let (mut columns, mut column) = ("auto auto 1fr", "1 / 4");
+    try_join_all(fus).await?.iter().for_each(|s| {
+        content.push_str(s);
+    });
 
-    if time.is_none() && !size {
-        columns = "auto";
-        column = "1 / 2";
-    } else if (time.is_none() && size) || (time.is_some() && !size) {
-        columns = "auto 1fr";
-        column = "1 / 3";
-    }
+    let (columns, column) = match (show_time, show_size) {
+        // Show only the name
+        (None, false) => ("auto", "1 / 2"),
+        // Show name, time, size
+        (Some(_), true) => ("auto auto 1fr", "1 / 4"),
+        // Show name time or name size
+        _ => ("auto 1fr", "1 / 3"),
+    };
 
     let template = TEMPLATE
         .replacen("{title}", title, 2)
@@ -134,4 +105,51 @@ pub async fn render_dir_html(
         .replacen("{content}", &content, 1);
 
     Ok(template)
+}
+
+async fn get_item_content(
+    entry: DirEntry,
+    show_time: &Option<String>,
+    show_size: bool,
+) -> Result<String> {
+    let mut content = String::new();
+
+    let os_name = entry.file_name();
+
+    let name = os_name
+        .to_str()
+        .ok_or_else(|| Error::new(ErrorKind::Other, ""))?;
+
+    let meta = entry.metadata().await?;
+    let is_file = meta.is_file();
+
+    if is_file {
+        content.push_str(&format!("<a href=\"{}\">{}</a>", name, name));
+    } else {
+        content.push_str(&format!("<a href=\"{}/\">{}/</a>", name, name));
+    }
+
+    if let Some(format) = &show_time {
+        let dur = meta
+            .modified()?
+            .duration_since(UNIX_EPOCH)
+            .map_err(|_| Error::new(ErrorKind::Other, ""))?;
+        let spec = Timespec::new(dur.as_secs() as i64, dur.subsec_nanos() as i32);
+
+        content.push_str(&format!(
+            "<time>{}</time>",
+            time::at(spec).strftime(format).unwrap()
+        ));
+    }
+
+    if show_size {
+        if is_file {
+            let size = bytes_to_size(meta.len());
+            content.push_str(&format!("<span>{}</span>", size));
+        } else {
+            content.push_str("<span></span>");
+        }
+    }
+
+    Ok(content)
 }
