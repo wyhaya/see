@@ -424,15 +424,13 @@ async fn handle(req: Request<Body>, ip: IpAddr, mut config: SiteConfig) -> Respo
                     )
                     .await;
                 } else {
-                    let aims;
-                    if let Some(query) = req.uri().query() {
-                        aims = format!("{}/{}", &req_path, query);
-                    } else {
-                        aims = format!("{}/", &req_path);
-                    }
+                    let location = match req.uri().query() {
+                        Some(query) => format!("{}/{}", &req_path, query),
+                        None => format!("{}/", &req_path),
+                    };
                     return Response::builder()
                         .status(StatusCode::MOVED_PERMANENTLY)
-                        .header(LOCATION, aims)
+                        .header(LOCATION, location)
                         .body(Body::empty())
                         .unwrap();
                 }
@@ -459,8 +457,10 @@ async fn handle(req: Request<Body>, ip: IpAddr, mut config: SiteConfig) -> Respo
                 }
             }
         }
-        Err(_) => match fallbacks(&path, &config.extensions).await {
-            Some((file, ext)) => {
+        Err(_) => {
+            // Cannot access the corresponding file
+            // Use the 'config extensions' file to roll back
+            if let Some((file, ext)) = fallbacks(&path, &config.extensions).await {
                 return response_file(
                     StatusCode::OK,
                     file,
@@ -468,17 +468,17 @@ async fn handle(req: Request<Body>, ip: IpAddr, mut config: SiteConfig) -> Respo
                     req.headers().get(ACCEPT_ENCODING),
                     &config,
                 )
-                .await
-            }
-            None => {
-                return response_error_page(
-                    req.headers().get(ACCEPT_ENCODING),
-                    &config,
-                    StatusCode::NOT_FOUND,
-                )
                 .await;
             }
-        },
+
+            // 404
+            return response_error_page(
+                req.headers().get(ACCEPT_ENCODING),
+                &config,
+                StatusCode::NOT_FOUND,
+            )
+            .await;
+        }
     };
 }
 

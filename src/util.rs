@@ -10,7 +10,7 @@ pub fn current_dir() -> PathBuf {
 }
 
 pub fn home_dir() -> PathBuf {
-    match dirs_sys::home_dir() {
+    match dirs::home_dir() {
         Some(home) => home,
         None => exit!("Can't get home directory"),
     }

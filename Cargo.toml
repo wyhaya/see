@@ -21,7 +21,7 @@ keywords = [
 ace = "0.2.0"
 async-compression = { version = "0.3.2", features = ["stream", "gzip", "deflate", "brotli"] }
 bright = "0.3.0"
-dirs-sys = "0.3.4"
+dirs = "2.0.2"
 futures = "0.3.4"
 globset = "0.4.5"
 hyper = "0.13.5"
