@@ -42,7 +42,7 @@ fn main() {
     let mut runtime = runtime::Builder::new()
         .thread_name(default::SERVER_NAME)
         .threaded_scheduler()
-        .enable_io()
+        .enable_all()
         .core_threads(num_cpus::get())
         .max_threads(num_cpus::get() + 1)
         .build()
