@@ -1,29 +1,6 @@
+# Configuration
 
-# Options
-
-* [listen](#listen)
-* [https](#https)
-* [host](#host)
-* [root](#root)
-* [echo](#echo)
-* [file](#file)
-* [rewrite](#rewrite)
-* [directory](#directory)
-* [compress](#compress)
-* [index](#index)
-* [header](#header)
-* [method](#method)
-* [auth](#auth)
-* [extension](#extension)
-* [status](#status)
-* [proxy](#proxy)
-* [log](#log)
-* [ip](#ip)
-* [buffer](#buffer)
-* [location](#location)
-* [var](#var)
-
-### listen
+## listen
 
 Bind to socket address
 
@@ -35,7 +12,7 @@ listen: 80 8080
 listen: 127.0.0.1:1234
 ```
 
-### https
+## https
 
 HTTPS option
 
@@ -46,7 +23,7 @@ https:
   cert: /root/ssl.pem
 ```
 
-### host
+## host
 
 Match http header host
 
@@ -60,7 +37,7 @@ host:                # Multiple
   - *.exmaple.com
 ```
 
-### root
+## root
 
 Directory that requires service
 
@@ -68,7 +45,7 @@ Directory that requires service
 root: /root/www 
 ```
 
-### echo
+## echo
 
 Output plain text
 
@@ -78,7 +55,7 @@ echo: Hello wrold
 echo: Hello, ${request_path}
 ```
 
-### file
+## file
 
 Output specified file
 
@@ -86,7 +63,7 @@ Output specified file
 file: ./www/index.html
 ```
 
-### rewrite
+## rewrite
   
 HTTP rewrite config
 
@@ -98,7 +75,7 @@ rewrite: /example 301
 rewrite: /example 302
 ```
 
-### directory
+## directory
 
 File list options
 
@@ -115,7 +92,7 @@ directory:
   size: true | false
 ```
 
-### compress
+## compress
 
 File compression options
 
@@ -128,12 +105,13 @@ compress:
   extension:     # Which files are compressed, default: html css js json png
     - css
     - js
+    - ''
 # or
 compress:         
   mode: br gzip auto     # Set compression priority
 ```
 
-### index
+## index
 
 Index file, default: index.html index.htm
  
@@ -147,7 +125,7 @@ index:
   - index.htm
 ```
 
-### header
+## header
 
 Header in response
 
@@ -157,7 +135,7 @@ header:
   Set-Cookie: "12345"
 ```
 
-### method
+## method
 
 Method of allowing requests, default: GET HEAD
 
@@ -167,7 +145,7 @@ method:
   - PUT
 ```
 
-### auth
+## auth
   
 HTTP user and password verification
 
@@ -177,7 +155,7 @@ auth:
   password: password
 ```
 
-### extension
+## extension
 
 Sets file extension fallbacks
 
@@ -187,7 +165,7 @@ extension:
   - htm
 ```
 
-### status
+## status
 
 Custom status page
 
@@ -201,7 +179,7 @@ status:
   502: 502.html
 ```
 
-### proxy
+## proxy
 
 Proxy options
 
@@ -216,11 +194,11 @@ proxy:
 proxy:                     # Rand proxy
   uri:
     - http://example1.com
-    - http://example2.com
+    - http://example2.com${request_uri}
 
 ```
 
-### log
+## log
 
 Access log
 
@@ -235,7 +213,7 @@ log:
   format: ${request_path} ${header_host}
 ```
 
-### ip
+## ip
 
 Allow and deny clients from specified IP
 
@@ -248,7 +226,7 @@ ip:
     - 172.17.*.*
 ```
 
-### buffer
+## buffer
 
 Set the buffer size of the read file. default: 16 * 1024
 
@@ -256,7 +234,7 @@ Set the buffer size of the read file. default: 16 * 1024
 buffer: 1m  # example: 1b 2k 3.4m
 ```
 
-### location
+## location
 
 Separately configured for certain locations
 
@@ -285,24 +263,4 @@ location:
     echo: Match end
 ```
 
-### var
-
-Built-in variables can be used in `echo` `rewrite` `header` `proxy`
-
-```
-${VAR}
-```
-
-```yaml
-echo: Hello ${request_path}, ${request_header_host}
-```
-
-* `${request_path}`
-* `${request_query}`
-* `${request_uri}`
-* `${request_method}`
-* `${request_query_NAME}`
-* `${request_header_NAME}`
-
----
 
