@@ -1,5 +1,6 @@
-use crate::*;
-use rand::prelude::*;
+use crate::{default, exit};
+use rand::prelude::Rng;
+use rand::thread_rng;
 use std::env;
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -42,11 +43,11 @@ pub fn dedup<T: Eq>(vec: Vec<T>) -> Vec<T> {
     new
 }
 
-pub fn rand<'a, T>(vec: &'a [T]) -> &'a T {
+pub fn get_rand_item<'a, T>(vec: &'a [T]) -> &'a T {
     if vec.len() == 1 {
         &vec[0]
     } else {
-        let i = rand::thread_rng().gen_range(0, vec.len());
+        let i = thread_rng().gen_range(0, vec.len());
         &vec[i]
     }
 }
@@ -155,7 +156,7 @@ pub fn try_to_socket_addr(text: &str) -> Result<SocketAddr, ()> {
 pub fn bytes_to_size(bytes: u64) -> String {
     const UNITS: [&str; 7] = ["B", "KB", "MB", "GB", "TB", "PB", "EB"];
     if bytes < 1024 {
-        return format!("{}.00 B", bytes);
+        return format!("{} B", bytes);
     }
     let bytes = bytes as f64;
     let i = (bytes.ln() / 1024_f64.ln()) as i32;
@@ -190,9 +191,9 @@ fn test_try_to_socket_addr() {
 
 #[test]
 fn test_bytes_to_size() {
-    assert_eq!(bytes_to_size(0), "0.00 B");
-    assert_eq!(bytes_to_size(1), "1.00 B");
-    assert_eq!(bytes_to_size(1023), "1023.00 B");
+    assert_eq!(bytes_to_size(0), "0 B");
+    assert_eq!(bytes_to_size(1), "1 B");
+    assert_eq!(bytes_to_size(1023), "1023 B");
     assert_eq!(bytes_to_size(1024), "1.00 KB");
     assert_eq!(bytes_to_size(1 * 1024 * 1024), "1.00 MB");
     assert_eq!(bytes_to_size(1 * 1024 * 1024 * 1024 * 1024), "1.00 TB");

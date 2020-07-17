@@ -72,7 +72,6 @@ pub fn quick_start_config(root: PathBuf, listen: SocketAddr) -> ServerConfig {
             proxy: Setting::None,
             log: Setting::None,
             ip: Setting::None,
-            buffer: Setting::None,
             location: Vec::with_capacity(0),
         }],
     }

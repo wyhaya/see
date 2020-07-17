@@ -2,7 +2,8 @@ use futures::future::FutureExt;
 use hyper::client::connect::{Connected, Connection};
 use hyper::client::HttpConnector;
 use hyper::service::Service;
-use hyper::Uri;
+use hyper::{Body, Client, Request, Response, Uri};
+use lazy_static::lazy_static;
 use std::future::Future;
 use std::mem::MaybeUninit;
 use std::pin::Pin;
@@ -15,33 +16,35 @@ use tokio_rustls::webpki::DNSNameRef;
 use tokio_rustls::TlsConnector;
 use webpki_roots::TLS_SERVER_ROOTS;
 
+pub async fn request(req: Request<Body>) -> Result<Response<Body>, hyper::Error> {
+    lazy_static! {
+        static ref CLIENT: Client<Connector<HttpConnector>> =
+            Client::builder().build(Connector::new());
+    }
+    CLIENT.request(req).await
+}
+
+// from: https://github.com/ctz/hyper-rustls/blob/master/src/connector.rs
 #[derive(Clone)]
 pub struct Connector<T> {
     http: T,
-    tls: Option<Arc<ClientConfig>>,
+    tls: Arc<ClientConfig>,
 }
 
 impl Connector<HttpConnector> {
-    pub fn new(is_https: bool) -> Self {
-        if is_https {
-            let mut http = HttpConnector::new();
-            http.enforce_http(false);
+    pub fn new() -> Self {
+        let mut http = HttpConnector::new();
+        http.enforce_http(false);
 
-            let mut config = ClientConfig::new();
-            config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
-            config
-                .root_store
-                .add_server_trust_anchors(&TLS_SERVER_ROOTS);
+        let mut config = ClientConfig::new();
+        config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
+        config
+            .root_store
+            .add_server_trust_anchors(&TLS_SERVER_ROOTS);
 
-            Self {
-                http,
-                tls: Some(Arc::new(config)),
-            }
-        } else {
-            Self {
-                http: HttpConnector::new(),
-                tls: None,
-            }
+        Self {
+            http,
+            tls: Arc::new(config),
         }
     }
 }
@@ -67,35 +70,33 @@ where
     }
 
     fn call(&mut self, dst: Uri) -> Self::Future {
-        match &self.tls {
-            Some(config) => {
-                let config = config.clone();
-                let host = dst.host().unwrap_or_default().to_string();
-                let connecting = self.http.call(dst);
+        let is_https = dst.scheme_str() == Some("https");
+        if is_https {
+            let config = self.tls.clone();
+            let host = dst.host().unwrap_or_default().to_string();
+            let connecting = self.http.call(dst);
 
-                async move {
-                    let stream = connecting.await.map_err(Into::into)?;
-                    let connector = TlsConnector::from(config);
-                    let domain = DNSNameRef::try_from_ascii_str(&host)
-                        .map_err(|_| io::Error::new(io::ErrorKind::Other, "invalid dnsname"))?;
+            async move {
+                let stream = connecting.await.map_err(Into::into)?;
+                let connector = TlsConnector::from(config);
+                let domain = DNSNameRef::try_from_ascii_str(&host)
+                    .map_err(|_| io::Error::new(io::ErrorKind::Other, "invalid dnsname"))?;
 
-                    let tls = connector
-                        .connect(domain, stream)
-                        .await
-                        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                let tls = connector
+                    .connect(domain, stream)
+                    .await
+                    .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
 
-                    Ok(Stream::Https(tls))
-                }
-                .boxed()
+                Ok(Stream::Https(tls))
             }
-            None => {
-                let connecting = self.http.call(dst);
-                async move {
-                    let stream = connecting.await.map_err(Into::into)?;
-                    Ok(Stream::Http(stream))
-                }
-                .boxed()
+            .boxed()
+        } else {
+            let connecting = self.http.call(dst);
+            async move {
+                let stream = connecting.await.map_err(Into::into)?;
+                Ok(Stream::Http(stream))
             }
+            .boxed()
         }
     }
 }

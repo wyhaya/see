@@ -1,11 +1,13 @@
-use crate::*;
+use crate::{exit, util};
 use globset::Glob;
+use hyper::header::{HeaderName, HeaderValue};
 use hyper::{Method, Uri};
 use regex::Regex;
+use std::net::{IpAddr, SocketAddr};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::time::Duration;
-use util::*;
+use util::{try_parse_duration, try_parse_size, try_to_socket_addr};
 
 // Get the extension of the path
 pub trait PathExtension {
@@ -14,8 +16,9 @@ pub trait PathExtension {
 
 impl PathExtension for PathBuf {
     fn get_extension(&self) -> Option<&str> {
-        let ext = self.extension()?;
-        ext.to_str()
+        self.extension()
+            .map(|ext| ext.to_str())
+            .unwrap_or_else(|| Some(""))
     }
 }
 

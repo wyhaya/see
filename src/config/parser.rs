@@ -1,59 +1,23 @@
-use crate::config::default;
-use crate::config::tls::{create_sni_server_config, TLSContent};
-use crate::config::Force;
-use crate::config::Logger;
-use crate::util::*;
-use crate::var::{ToVar, Var};
-use crate::*;
+use crate::{
+    compress, config, exit, matcher, setting_none, setting_off, setting_value, util, var, yaml,
+    Setting,
+};
 use base64::encode;
-use compress::Level;
-use compress::{CompressLevel, CompressMode, Encoding};
+use compress::{CompressLevel, CompressMode, Encoding, Level};
+use config::tls::{create_sni_server_config, TLSContent};
+use config::{default, AbsolutePath, Force, Logger};
+use hyper::header::{HeaderMap, HeaderValue};
 use hyper::{Method, Uri};
 use matcher::{HostMatcher, IpMatcher, LocationMatcher};
 use std::fs;
-use std::path::Path;
+use std::net::SocketAddr;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 use tokio_rustls::TlsAcceptor;
+use util::*;
+use var::Var;
 use yaml::YamlExtend;
 use yaml_rust::{Yaml, YamlLoader};
-
-#[derive(Debug, Clone)]
-pub enum Setting<T> {
-    None,
-    Off,
-    Value(T),
-}
-
-impl<T> Setting<T> {
-    pub fn is_none(&self) -> bool {
-        match self {
-            Setting::None => true,
-            _ => false,
-        }
-    }
-
-    pub fn is_off(&self) -> bool {
-        match self {
-            Setting::Off => true,
-            _ => false,
-        }
-    }
-}
-
-impl<T> Default for Setting<T> {
-    fn default() -> Self {
-        Setting::None
-    }
-}
-
-impl<T: Default> Setting<T> {
-    pub fn unwrap_or_default(self) -> T {
-        match self {
-            Setting::Value(x) => x,
-            _ => Default::default(),
-        }
-    }
-}
 
 #[derive(Clone)]
 pub struct ServerConfig {
@@ -81,7 +45,6 @@ pub struct SiteConfig {
     pub proxy: Setting<Proxy>,
     pub log: Setting<Logger>,
     pub ip: Setting<IpMatcher>,
-    pub buffer: Setting<usize>,
     pub location: Vec<Location>,
 }
 
@@ -104,7 +67,6 @@ pub struct Location {
     pub proxy: Setting<Proxy>,
     pub log: Setting<Logger>,
     pub ip: Setting<IpMatcher>,
-    pub buffer: Setting<usize>,
 }
 
 #[derive(Debug, Clone)]
@@ -147,19 +109,12 @@ impl From<String> for Rewrite {
 
         let location = split
             .next()
+            .map(|s| Var::from(s).map_none(|s| s.as_str().to_header_value()))
             .unwrap_or_else(|| exit!("Could not find redirected url"));
 
         let status = split.next().map(RewriteStatus::from).unwrap_or_default();
 
-        let val = location
-            .to_string()
-            .to_var()
-            .map_none(|s| s.as_str().to_header_value());
-
-        Rewrite {
-            location: val,
-            status,
-        }
+        Rewrite { location, status }
     }
 }
 
@@ -170,6 +125,22 @@ pub struct Compress {
 }
 
 impl Compress {
+    // todo
+    // remove ...
+    pub fn get_html_compress_mode(&self, header: &HeaderValue) -> Option<CompressMode> {
+        // accept-encoding: gzip, deflate, br
+        let header: Vec<&str> = match header.to_str() {
+            Ok(encoding) => encoding.split(", ").collect(),
+            Err(_) => return None,
+        };
+        for encoding in &self.modes {
+            if let Some(compress) = encoding.get_compress_mode(&header) {
+                return Some(compress);
+            }
+        }
+        None
+    }
+
     pub fn get_compress_mode(&self, header: &HeaderValue, ext: &str) -> Option<CompressMode> {
         if self.extensions.iter().any(|item| *item == ext) {
             // accept-encoding: gzip, deflate, br
@@ -201,36 +172,6 @@ pub struct Proxy {
     pub method: Option<Method>,
     pub timeout: Duration,
     pub headers: Setting<HeaderMap>,
-}
-
-macro_rules! setting_value {
-    ($yaml: expr) => {
-        setting_none!($yaml);
-        setting_off!($yaml);
-    };
-}
-
-macro_rules! setting_none {
-    ($yaml: expr) => {
-        if $yaml.is_badvalue() || $yaml.is_null() {
-            return Setting::None;
-        }
-    };
-    ($yaml: expr, $default: expr) => {
-        if $yaml.is_badvalue() || $yaml.is_null() {
-            return Setting::Value($default);
-        }
-    };
-}
-
-macro_rules! setting_off {
-    ($yaml: expr) => {
-        if let Some(val) = $yaml.as_bool() {
-            if !val {
-                return Setting::Off;
-            }
-        }
-    };
 }
 
 impl ServerConfig {
@@ -322,7 +263,6 @@ impl ServerConfig {
                 proxy: parser.proxy(),
                 log: parser.log(&config_dir).await,
                 ip: parser.ip(),
-                buffer: parser.buffer(),
                 auth: parser.auth(),
                 location: parser.location(&config_dir, root).await,
             };
@@ -399,7 +339,6 @@ impl Parser {
                     "proxy",
                     "log",
                     "ip",
-                    "buffer",
                 ],
                 &[],
             );
@@ -429,7 +368,6 @@ impl Parser {
                 proxy: parser.proxy(),
                 log: parser.log(&config_dir).await,
                 ip: parser.ip(),
-                buffer: parser.buffer(),
             });
         }
         vec
@@ -479,7 +417,7 @@ impl Parser {
     fn echo(&self) -> Setting<Var<String>> {
         setting_value!(self.yaml["echo"]);
 
-        let var = self.yaml.key_to_string("echo").to_var();
+        let var = Var::from(self.yaml.key_to_string("echo"));
         Setting::Value(var)
     }
 
@@ -704,10 +642,7 @@ impl Parser {
         let uri = proxy
             .key_to_multiple_string("uri")
             .iter()
-            .map(|u| {
-                let var = u.clone().to_var();
-                var.map_none(|s| s.as_str().to_uri())
-            })
+            .map(|u| Var::from(u).map_none(|s| s.as_str().to_uri()))
             .collect::<Vec<Var<Uri>>>();
 
         let method = if proxy["method"].is_badvalue() {
@@ -781,14 +716,6 @@ impl Parser {
             ip.key_to_multiple_string("allow"),
             ip.key_to_multiple_string("deny"),
         ))
-    }
-
-    fn buffer(&self) -> Setting<usize> {
-        let buffer = &self.yaml["buffer"];
-        setting_value!(buffer);
-
-        let size = self.yaml.key_to_string("buffer").as_str().to_size();
-        Setting::Value(size)
     }
 
     fn break_(&self) -> bool {

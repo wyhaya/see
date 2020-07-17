@@ -1,6 +1,5 @@
-use crate::*;
+use crate::{exit, util};
 use std::fmt::Display;
-use util::dedup;
 use yaml_rust::yaml::Hash;
 use yaml_rust::Yaml;
 
@@ -120,6 +119,6 @@ impl YamlExtend for Yaml {
             }
         }
 
-        dedup(result)
+        util::dedup(result)
     }
 }

@@ -71,12 +71,12 @@ const TEMPLATE: &str = r#"<!DOCTYPE html>
 "#;
 
 pub async fn render_dir_html(
-    dir_path: &PathBuf,
+    dir: &PathBuf,
     title: &str,
     show_time: &Option<String>,
     show_size: bool,
 ) -> io::Result<String> {
-    let mut dir = fs::read_dir(dir_path).await?;
+    let mut dir = fs::read_dir(dir).await?;
     let mut content = String::new();
     let mut fus = vec![];
 

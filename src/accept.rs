@@ -19,47 +19,38 @@ pub async fn run(tcp: TcpListener, config: ServerConfig) {
         let config = config.clone();
 
         async move {
-            let (mut stream, ip) = match rst {
+            let (stream, ip) = match rst {
                 Ok(r) => r,
                 Err(_) => return None,
             };
 
             if let Some(tls) = &config.tls {
-                let mut buf = [0; 1];
-                let is_https = stream
-                    .peek(&mut buf)
-                    .await
-                    .map(|_| buf[0] == 22)
-                    .unwrap_or_default();
+                let stream = match tls.clone().accept(stream).await {
+                    Ok(s) => s,
+                    // TLS connection failed
+                    Err(_) => return None,
+                };
 
-                if is_https {
-                    let stream = match tls.clone().accept(stream).await {
-                        Ok(s) => s,
-                        // TLS connection failed
-                        Err(_) => return None,
-                    };
+                let (_, session) = stream.get_ref();
+                let name = session.get_sni_hostname().unwrap();
 
-                    let (_, session) = stream.get_ref();
-                    let name = session.get_sni_hostname().unwrap();
+                let c = config
+                    .sites
+                    .iter()
+                    .find(|d| {
+                        if let Some(n) = &d.sni_name {
+                            return n == name;
+                        }
+                        false
+                    })
+                    .unwrap();
 
-                    let c = config
-                        .sites
-                        .iter()
-                        .find(|d| {
-                            if let Some(n) = &d.sni_name {
-                                return n == name;
-                            }
-                            false
-                        })
-                        .unwrap();
-
-                    // Use HTTPS response
-                    return Some(Ok::<_, hyper::Error>(Connect::TlsStream(
-                        stream,
-                        ip,
-                        vec![c.clone()],
-                    )));
-                }
+                // Use HTTPS response
+                return Some(Ok::<_, hyper::Error>(Connect::TlsStream(
+                    stream,
+                    ip,
+                    vec![c.clone()],
+                )));
             }
 
             // Use HTTP response

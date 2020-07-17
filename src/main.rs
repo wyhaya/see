@@ -1,10 +1,8 @@
 mod accept;
-mod base64;
+mod client;
 mod compress;
 mod config;
-mod connector;
 mod directory;
-mod file;
 mod matcher;
 mod process;
 mod util;
@@ -13,30 +11,26 @@ mod yaml;
 
 use ace::App;
 use bright::Colorful;
+use compress::ComressBody;
 use config::{
     default, mime, AbsolutePath, Directory, Force, PathExtension, Proxy, RewriteStatus,
     ServerConfig, Setting, SiteConfig, StatusPage,
 };
-use connector::Connector;
-use file::create_file_body;
 use futures::future::join_all;
 use hyper::header::{
-    HeaderName, HeaderValue, ACCEPT_ENCODING, ALLOW, AUTHORIZATION, CONTENT_ENCODING,
-    CONTENT_LENGTH, CONTENT_TYPE, HOST, LOCATION, SERVER, WWW_AUTHENTICATE,
+    HeaderValue, ACCEPT_ENCODING, ALLOW, AUTHORIZATION, CONTENT_ENCODING, CONTENT_LENGTH,
+    CONTENT_TYPE, HOST, LOCATION, SERVER, WWW_AUTHENTICATE,
 };
 use hyper::http::response::Builder;
 use hyper::Result as HyperResult;
-use hyper::{Body, Client, HeaderMap, Method, Request, Response, StatusCode, Uri, Version};
-use lazy_static::lazy_static;
+use hyper::{Body, HeaderMap, Method, Request, Response, StatusCode, Uri, Version};
 use matcher::HostMatcher;
 use process::{start_daemon, stop_daemon};
-use regex::Regex;
 use std::net::{IpAddr, SocketAddr};
 use std::path::{Path, PathBuf};
 use tokio::fs::{self, File};
 use tokio::net::TcpListener;
 use tokio::runtime;
-use var::ReplaceVar;
 
 fn main() {
     let mut runtime = runtime::Builder::new()
@@ -54,11 +48,13 @@ fn main() {
 async fn start() {
     let mut app = App::new()
         .config(default::SERVER_NAME, default::VERSION)
-        .cmd("start", "Quick start in the current directory")
+        .cmd("start", "Quick start")
         .cmd("stop", "Stop the daemon")
         .cmd("restart", "Restart the service program")
         .cmd("help", "Print help information")
         .cmd("version", "Print version information")
+        .opt("-b", "Change the quick start binding address")
+        .opt("-p", "Change the quick start directory")
         .opt("-c", "Specify a configuration file")
         .opt("-d", "Running in the background")
         .opt("-t", "Test the config file for error");
@@ -68,14 +64,27 @@ async fn start() {
     if let Some(cmd) = app.command() {
         match cmd.as_str() {
             "start" => {
-                let arg = app.value("start").unwrap();
-                let listen = if arg.is_empty() {
-                    default::START_PORT.to_string()
-                } else {
-                    arg[0].clone()
-                };
-                let addr = listen.as_str().to_socket_addr();
-                configs = vec![default::quick_start_config(util::current_dir(), addr)];
+                let path = app
+                    .value("-p")
+                    .map(|values| {
+                        if values.len() != 1 {
+                            exit!("-p value: [DIR]");
+                        }
+                        values[0].absolute_path(util::current_dir())
+                    })
+                    .unwrap_or_else(|| util::current_dir());
+
+                let addr = app
+                    .value("-b")
+                    .map(|values| {
+                        if values.len() != 1 {
+                            exit!("-b value: [ADDRESS]");
+                        }
+                        values[0].clone()
+                    })
+                    .unwrap_or_else(|| default::START_PORT.to_string());
+                let addr = addr.as_str().to_socket_addr();
+                configs = vec![default::quick_start_config(path, addr)];
             }
             "stop" => {
                 return stop_daemon();
@@ -317,9 +326,7 @@ async fn handle(req: Request<Body>, ip: IpAddr, mut config: SiteConfig) -> Respo
 
     // echo: Output plain text
     if let Setting::Value(echo) = &config.echo {
-        let echo = echo
-            .clone()
-            .unwrap_or_else(|s, r| s.as_str().replace_var(&r, &req));
+        let echo = echo.clone().map(|s, r| r.replace(s, &req));
 
         return Response::builder()
             .header(CONTENT_TYPE, mime::TEXT_PLAIN)
@@ -329,8 +336,8 @@ async fn handle(req: Request<Body>, ip: IpAddr, mut config: SiteConfig) -> Respo
 
     // rewrite
     if let Setting::Value(rewrite) = &config.rewrite {
-        let value = rewrite.location.clone().unwrap_or_else(|s, r| {
-            let result = s.as_str().replace_var(&r, &req);
+        let value = rewrite.location.clone().map(|s, r| {
+            let result = r.replace(s, &req);
             HeaderValue::from_str(&result).unwrap()
         });
 
@@ -379,10 +386,7 @@ async fn handle(req: Request<Body>, ip: IpAddr, mut config: SiteConfig) -> Respo
                             directory::render_dir_html(&path, &req_path, &option.time, option.size)
                                 .await;
                         return match html {
-                            Ok(html) => Response::builder()
-                                .header(CONTENT_TYPE, mime::TEXT_HTML)
-                                .body(Body::from(html))
-                                .unwrap(),
+                            Ok(html) => return response_html(html, &req, &config).await,
                             Err(_) => {
                                 response_error_page(
                                     req.headers().get(ACCEPT_ENCODING),
@@ -535,9 +539,6 @@ fn merge_location(route: &str, mut config: SiteConfig) -> SiteConfig {
         if !item.ip.is_none() {
             config.ip = item.ip;
         }
-        if !item.buffer.is_none() {
-            config.buffer = item.buffer;
-        }
         if !item.status._403.is_none() {
             config.status._403 = item.status._403;
         }
@@ -562,8 +563,8 @@ fn merge_location(route: &str, mut config: SiteConfig) -> SiteConfig {
 async fn proxy_response(mut req: Request<Body>, c: Proxy, config: &SiteConfig) -> Response<Body> {
     let encoding = req.headers().get(ACCEPT_ENCODING).cloned();
 
-    let uri = util::rand(&c.uri).clone().unwrap_or_else(|s, r| {
-        let result = s.as_str().replace_var(&r, &req);
+    let uri = util::get_rand_item(&c.uri).clone().map(|s, r| {
+        let result = r.replace(s, &req);
         result.parse::<Uri>().unwrap()
     });
 
@@ -575,10 +576,10 @@ async fn proxy_response(mut req: Request<Body>, c: Proxy, config: &SiteConfig) -
         req.headers_mut().extend(headers);
     }
 
-    let is_https = req.uri().scheme_str() == Some("https");
-    let client = Client::builder().build::<_, Body>(Connector::new(is_https));
+    // todo
+    // timeout
 
-    match client.request(req).await {
+    match client::request(req).await {
         Ok(res) => res,
         Err(_) => {
             // 502
@@ -610,6 +611,27 @@ async fn response_error_page(
     Response::builder().into_status(status)
 }
 
+async fn response_html(html: String, req: &Request<Body>, config: &SiteConfig) -> Response<Body> {
+    let encoding = match &config.compress {
+        Setting::Value(compress) => match req.headers().get(ACCEPT_ENCODING) {
+            Some(header) => compress.get_html_compress_mode(&header),
+            None => None,
+        },
+        _ => None,
+    };
+    let header = match encoding {
+        Some(encoding) => (CONTENT_ENCODING, encoding.to_header_value()),
+        None => (CONTENT_LENGTH, HeaderValue::from(html.len())),
+    };
+    let body = ComressBody::new(encoding).content(html);
+    let mut res = Response::builder()
+        .header(CONTENT_TYPE, mime::TEXT_HTML)
+        .body(body)
+        .unwrap();
+    res.headers_mut().insert(header.0, header.1);
+    res
+}
+
 async fn response_file(
     status: StatusCode,
     file: File,
@@ -636,12 +658,7 @@ async fn response_file(
         }
     };
 
-    let size = match config.buffer {
-        Setting::Value(u) => u,
-        _ => default::BUF_SIZE,
-    };
-
-    let body = create_file_body(file, size, encoding);
+    let body = ComressBody::new(encoding).file(file);
 
     let mut res = Response::builder()
         .status(status)

@@ -1,4 +1,4 @@
-use crate::var::{ReplaceVar, ToVar, Var};
+use crate::var::Var;
 use hyper::{Body, Request};
 use std::path::Path;
 use std::sync::Arc;
@@ -20,7 +20,7 @@ impl Logger {
         f += "\n";
 
         Self {
-            format: f.to_var(),
+            format: Var::from(f),
             file: None,
             stdout: None,
         }
@@ -47,10 +47,7 @@ impl Logger {
     }
 
     pub async fn write(&mut self, req: &Request<Body>) {
-        let text = self
-            .format
-            .clone()
-            .unwrap_or_else(|s, r| s.as_str().replace_var(&r, req));
+        let text = self.format.clone().map(|s, r| r.replace(s, req));
         let bytes = text.as_bytes();
 
         // file
