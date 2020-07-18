@@ -165,18 +165,19 @@ extension:
   - htm
 ```
 
-## status
+## error
 
-Custom status page
+Custom error page
 
 > If you use a relative path, you must set root
 
 ```yaml
-status:  
+error:  
   403: 403.html
   404: 404.html
   500: 500.html
   502: 502.html
+  504: 504.html
 ```
 
 ## proxy
@@ -187,7 +188,6 @@ Proxy options
 proxy:
   uri: http://example.com  # Proxy address
   method: GET              # Change the method of the proxy
-  timeout: 3s              # timeout: 2d 2m 2h 2s 2ms format
   header:                  # Header in proxy request
     key: value
 # or
@@ -225,42 +225,4 @@ ip:
   deny:
     - 172.17.*.*
 ```
-
-## buffer
-
-Set the buffer size of the read file. default: 16 * 1024
-
-```yaml
-buffer: 1m  # example: 1b 2k 3.4m
-```
-
-## location
-
-Separately configured for certain locations
-
-Match pattern
-
-* Use `glob` matching by default
-* `~` Use regular expressions
-* `^` Match start character
-* `$` Match end character
-
-```yaml
-location: 
-  /public:
-    directory:
-      time: true
-      size: true
-  /private/**:
-    auth:
-      user: username
-      password: password
-  ~[1-9]{10}:
-    echo: Match regex
-  ^start:
-    echo: Match start
-  $.png:
-    echo: Match end
-```
-
 

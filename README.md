@@ -13,7 +13,10 @@ An HTTP server for hosting static files
 
 * Supported HTTP/1 and HTTP/2
 * Content compression (auto, gzip, deflate, br)
-* Simple and rich configuration
+* Support directory list
+* HTTP request proxy
+* Multiple website binding
+* [More...](https://see.wyhaya.com/config.html)
 
 ## Install
 
@@ -25,29 +28,25 @@ Or use `cargo` to install
 cargo install see
 ```
 
-<details>
-<summary>More</summary>
-</details>
+More ways to install [click](https://see.wyhaya.com/install.html)
 
-## Use
+## Usage
 
-Quick start
+Quick start in current directory
 
 ```bash
 see start
-# or
-see start 8080
 ```
 
-Start according to the configuration file
+Use specified port and directory
 
 ```bash
-see
-# or
-see -c config.yml
+see start -b 0.0.0.0:80 -p /root/www
 ```
 
 ## Config
+
+> Complete configuration documentation: [click](https://see.wyhaya.com/config.html)
 
 Use `yaml` format as a configuration file, You can use `see -c config.yml` to specify the configuration file location
 
@@ -69,4 +68,4 @@ The default configuration file is in `~/.see/config.yml`
       cert: /your/ssl.pem
 ```
 
-Complete configuration documentation: [docs/index.md](docs/index.md)
+---

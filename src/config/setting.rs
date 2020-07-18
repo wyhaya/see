@@ -39,6 +39,13 @@ pub enum Setting<T> {
 }
 
 impl<T> Setting<T> {
+    pub fn is_value(&self) -> bool {
+        match self {
+            Setting::Value(_) => true,
+            _ => false,
+        }
+    }
+
     pub fn is_none(&self) -> bool {
         match self {
             Setting::None => true,
@@ -50,6 +57,13 @@ impl<T> Setting<T> {
         match self {
             Setting::Off => true,
             _ => false,
+        }
+    }
+
+    pub fn into_value(self) -> T {
+        match self {
+            Setting::Value(val) => val,
+            _ => panic!("into_value"),
         }
     }
 }

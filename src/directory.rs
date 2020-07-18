@@ -3,8 +3,7 @@ use futures::future::try_join_all;
 use std::path::PathBuf;
 use std::time::UNIX_EPOCH;
 use time::Timespec;
-use tokio::fs;
-use tokio::fs::DirEntry;
+use tokio::fs::{self, DirEntry};
 use tokio::io::{self, Error, ErrorKind, Result};
 use tokio::stream::StreamExt;
 
@@ -73,8 +72,8 @@ const TEMPLATE: &str = r#"<!DOCTYPE html>
 pub async fn render_dir_html(
     dir: &PathBuf,
     title: &str,
-    show_time: &Option<String>,
-    show_size: bool,
+    time: &Option<String>,
+    size: bool,
 ) -> io::Result<String> {
     let mut dir = fs::read_dir(dir).await?;
     let mut content = String::new();
@@ -82,14 +81,14 @@ pub async fn render_dir_html(
 
     while let Some(entry) = dir.next().await {
         let entry = entry?;
-        fus.push(get_item_content(entry, &show_time, show_size));
+        fus.push(get_entry_content(entry, &time, size));
     }
 
     try_join_all(fus).await?.iter().for_each(|s| {
         content.push_str(s);
     });
 
-    let (columns, column) = match (show_time, show_size) {
+    let (columns, column) = match (time, size) {
         // Show only the name
         (None, false) => ("auto", "1 / 2"),
         // Show name, time, size
@@ -107,11 +106,7 @@ pub async fn render_dir_html(
     Ok(template)
 }
 
-async fn get_item_content(
-    entry: DirEntry,
-    show_time: &Option<String>,
-    show_size: bool,
-) -> Result<String> {
+async fn get_entry_content(entry: DirEntry, time: &Option<String>, size: bool) -> Result<String> {
     let mut content = String::new();
 
     let os_name = entry.file_name();
@@ -129,7 +124,7 @@ async fn get_item_content(
         content.push_str(&format!("<a href=\"{}/\">{}/</a>", name, name));
     }
 
-    if let Some(format) = &show_time {
+    if let Some(format) = &time {
         let dur = meta
             .modified()?
             .duration_since(UNIX_EPOCH)
@@ -142,7 +137,7 @@ async fn get_item_content(
         ));
     }
 
-    if show_size {
+    if size {
         if is_file {
             let size = bytes_to_size(meta.len());
             content.push_str(&format!("<span>{}</span>", size));

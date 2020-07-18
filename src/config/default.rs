@@ -1,5 +1,5 @@
 use crate::compress::CompressLevel;
-use crate::{Directory, HostMatcher, ServerConfig, Setting, SiteConfig, StatusPage};
+use crate::{Directory, ErrorPage, HostMatcher, ServerConfig, Setting, SiteConfig};
 use hyper::Method;
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -33,15 +33,10 @@ pub const DIRECTORY_TIME_FORMAT: &str = "%Y-%m-%d %H:%M";
 
 pub const BUF_SIZE: usize = 16 * 1024;
 
-// pub const PROXY_BUF_SIZE: usize = 8 * 1024;
-
-// pub const TIMEOUT: u64 = 5000;
-
-pub const PROXY_TIMEOUT: Duration = Duration::from_millis(5000);
+pub const CONNECT_TIMEOUT: Duration = Duration::from_millis(5000);
 
 // Should be synchronized with src/var.rs
-pub const LOG_FORMAT: &str =
-    "${request_method} ${request_header_host}${request_uri} ${request_header_user-agent}";
+pub const LOG_FORMAT: &str = "${method} ${header_host}${uri} ${header_user-agent}";
 
 // Quick start
 
@@ -68,7 +63,7 @@ pub fn quick_start_config(root: PathBuf, listen: SocketAddr) -> ServerConfig {
             methods: Setting::Value(ALLOW_METHODS.to_vec()),
             auth: Setting::None,
             extensions: Setting::None,
-            status: StatusPage::default(),
+            error: ErrorPage::default(),
             proxy: Setting::None,
             log: Setting::None,
             ip: Setting::None,

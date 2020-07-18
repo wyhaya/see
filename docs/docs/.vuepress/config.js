@@ -36,7 +36,8 @@ module.exports = {
                         'install',
                         'start',
                         'config',
-                        'var'
+                        'location',
+                        'variable'
                     ]
                 }
             ],

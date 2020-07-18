@@ -1,6 +1,6 @@
 
 
-# Var
+# Variable
 
 
 Built-in variables can be used in `echo` `rewrite` `header` `proxy`

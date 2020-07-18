@@ -1,18 +1,19 @@
 use crate::{
-    compress, config, exit, matcher, setting_none, setting_off, setting_value, util, var, yaml,
-    Setting,
+    compress, config, exit, logger, matcher, setting_none, setting_off, setting_value, util, var,
+    yaml, Setting,
 };
 use base64::encode;
 use compress::{CompressLevel, CompressMode, Encoding, Level};
 use config::tls::{create_sni_server_config, TLSContent};
-use config::{default, AbsolutePath, Force, Logger};
-use hyper::header::{HeaderMap, HeaderValue};
+use config::{default, AbsolutePath, Force};
+use hyper::header::{HeaderName, HeaderValue};
 use hyper::{Method, Uri};
+use logger::Logger;
 use matcher::{HostMatcher, IpMatcher, LocationMatcher};
+use std::collections::HashMap;
 use std::fs;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
 use tokio_rustls::TlsAcceptor;
 use util::*;
 use var::Var;
@@ -26,7 +27,9 @@ pub struct ServerConfig {
     pub sites: Vec<SiteConfig>,
 }
 
-#[derive(Clone, Debug)]
+pub type Headers = HashMap<HeaderName, Var<HeaderValue>>;
+
+#[derive(Debug, Clone)]
 pub struct SiteConfig {
     pub sni_name: Option<String>,
     pub host: HostMatcher,
@@ -35,17 +38,96 @@ pub struct SiteConfig {
     pub file: Setting<PathBuf>,
     pub index: Setting<Vec<String>>,
     pub directory: Setting<Directory>,
-    pub headers: Setting<HeaderMap>,
+    pub headers: Setting<Headers>,
     pub rewrite: Setting<Rewrite>,
     pub compress: Setting<Compress>,
     pub methods: Setting<Vec<Method>>,
     pub auth: Setting<String>,
     pub extensions: Setting<Vec<String>>,
-    pub status: StatusPage,
+    pub error: ErrorPage,
     pub proxy: Setting<Proxy>,
     pub log: Setting<Logger>,
     pub ip: Setting<IpMatcher>,
     pub location: Vec<Location>,
+}
+
+impl SiteConfig {
+    pub fn merge(mut self, route: &str) -> Self {
+        for item in self.location {
+            if !item.location.is_match(route) {
+                continue;
+            }
+            if item.root.is_some() {
+                self.root = item.root;
+            }
+            if !item.echo.is_none() {
+                self.echo = item.echo;
+            }
+            if !item.file.is_none() {
+                self.file = item.file;
+            }
+            if !item.index.is_none() {
+                self.index = item.index;
+            }
+            if !item.directory.is_none() {
+                self.directory = item.directory;
+            }
+            if !item.headers.is_none() {
+                if item.headers.is_value() {
+                    let mut h = self.headers.clone().unwrap_or_default();
+                    h.extend(item.headers.into_value());
+                    self.headers = Setting::Value(h);
+                } else if item.headers.is_off() {
+                    self.headers = Setting::Off;
+                }
+            }
+            if !item.rewrite.is_none() {
+                self.rewrite = item.rewrite;
+            }
+            if !item.compress.is_none() {
+                self.compress = item.compress;
+            }
+            if !item.methods.is_none() {
+                self.methods = item.methods;
+            }
+            if !item.auth.is_none() {
+                self.auth = item.auth;
+            }
+            if !item.extensions.is_none() {
+                self.extensions = item.extensions;
+            }
+            if !item.proxy.is_none() {
+                self.proxy = item.proxy;
+            }
+            if !item.log.is_none() {
+                self.log = item.log;
+            }
+            if !item.ip.is_none() {
+                self.ip = item.ip;
+            }
+            if !item.error._403.is_none() {
+                self.error._403 = item.error._403;
+            }
+            if !item.error._404.is_none() {
+                self.error._404 = item.error._404;
+            }
+            if !item.error._500.is_none() {
+                self.error._500 = item.error._500;
+            }
+            if !item.error._502.is_none() {
+                self.error._502 = item.error._502;
+            }
+            if !item.error._504.is_none() {
+                self.error._504 = item.error._504;
+            }
+            if item.break_ {
+                break;
+            }
+        }
+
+        self.location = Vec::with_capacity(0);
+        self
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -57,13 +139,13 @@ pub struct Location {
     pub file: Setting<PathBuf>,
     pub index: Setting<Vec<String>>,
     pub directory: Setting<Directory>,
-    pub headers: Setting<HeaderMap>,
+    pub headers: Setting<Headers>,
     pub rewrite: Setting<Rewrite>,
     pub compress: Setting<Compress>,
     pub methods: Setting<Vec<Method>>,
     pub auth: Setting<String>,
     pub extensions: Setting<Vec<String>>,
-    pub status: StatusPage,
+    pub error: ErrorPage,
     pub proxy: Setting<Proxy>,
     pub log: Setting<Logger>,
     pub ip: Setting<IpMatcher>,
@@ -159,19 +241,19 @@ impl Compress {
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct StatusPage {
+pub struct ErrorPage {
     pub _403: Setting<PathBuf>,
     pub _404: Setting<PathBuf>,
     pub _500: Setting<PathBuf>,
     pub _502: Setting<PathBuf>,
+    pub _504: Setting<PathBuf>,
 }
 
 #[derive(Debug, Clone)]
 pub struct Proxy {
     pub uri: Vec<Var<Uri>>,
     pub method: Option<Method>,
-    pub timeout: Duration,
-    pub headers: Setting<HeaderMap>,
+    pub headers: Setting<Headers>,
 }
 
 impl ServerConfig {
@@ -215,7 +297,7 @@ impl ServerConfig {
                     "method",
                     "auth",
                     "extension",
-                    "status",
+                    "error",
                     "proxy",
                     "log",
                     "ip",
@@ -259,7 +341,7 @@ impl ServerConfig {
                 compress: parser.compress(),
                 extensions: parser.extensions(),
                 methods: parser.methods(true),
-                status: parser.status(&root),
+                error: parser.error(&root),
                 proxy: parser.proxy(),
                 log: parser.log(&config_dir).await,
                 ip: parser.ip(),
@@ -335,7 +417,7 @@ impl Parser {
                     "method",
                     "auth",
                     "extension",
-                    "status",
+                    "error",
                     "proxy",
                     "log",
                     "ip",
@@ -364,7 +446,7 @@ impl Parser {
                 methods: parser.methods(false),
                 auth: parser.auth(),
                 extensions: parser.extensions(),
-                status: parser.status(&root),
+                error: parser.error(&root),
                 proxy: parser.proxy(),
                 log: parser.log(&config_dir).await,
                 ip: parser.ip(),
@@ -488,20 +570,20 @@ impl Parser {
         Setting::Value(Directory { time, size })
     }
 
-    fn headers(&self) -> Setting<HeaderMap> {
+    fn headers(&self) -> Setting<Headers> {
         setting_value!(self.yaml["header"]);
 
         let hash = self.yaml.key_to_hash("header");
-        let mut map = HeaderMap::new();
+        let mut map = HashMap::new();
 
         for (i, (key, value)) in hash.iter().enumerate() {
             let key = key.to_string(format!("header[{}]", i));
-            let value = value.to_string(&key);
+            let header_name = key.as_str().to_header_name();
 
-            map.insert(
-                key.as_str().to_header_name(),
-                value.as_str().to_header_value(),
-            );
+            let value = Var::from(value.to_string(&key));
+            let header_value = value.map_none(|s| s.as_str().to_header_value());
+
+            map.insert(header_name, header_value);
         }
 
         Setting::Value(map)
@@ -600,25 +682,26 @@ impl Parser {
         Setting::Value(format!("Basic {}", encode(&s)))
     }
 
-    fn status(&self, root: &Option<PathBuf>) -> StatusPage {
-        if self.yaml["status"].is_badvalue() {
-            return StatusPage::default();
+    fn error(&self, root: &Option<PathBuf>) -> ErrorPage {
+        if self.yaml["error"].is_badvalue() {
+            return ErrorPage::default();
         }
 
         self.yaml
-            .check("status", &["403", "404", "500", "502"], &[]);
+            .check("error", &["403", "404", "500", "502", "504"], &[]);
 
-        let parser = Parser::new(self.yaml["status"].clone());
+        let parser = Parser::new(self.yaml["error"].clone());
 
-        StatusPage {
-            _403: parser.status_item(403, &root),
-            _404: parser.status_item(404, &root),
-            _500: parser.status_item(500, &root),
-            _502: parser.status_item(502, &root),
+        ErrorPage {
+            _403: parser.error_page(403, &root),
+            _404: parser.error_page(404, &root),
+            _500: parser.error_page(500, &root),
+            _502: parser.error_page(502, &root),
+            _504: parser.error_page(504, &root),
         }
     }
 
-    fn status_item(&self, status: usize, root: &Option<PathBuf>) -> Setting<PathBuf> {
+    fn error_page(&self, status: usize, root: &Option<PathBuf>) -> Setting<PathBuf> {
         setting_value!(self.yaml[status]);
 
         let s = self.yaml[status].to_string(status);
@@ -652,18 +735,11 @@ impl Parser {
             Some(method)
         };
 
-        let timeout = if proxy["timeout"].is_badvalue() {
-            default::PROXY_TIMEOUT
-        } else {
-            proxy.key_to_string("timeout").as_str().to_duration()
-        };
-
-        let headers = Parser::new(self.yaml.clone()).headers();
+        let headers = Parser::new(proxy.clone()).headers();
 
         Setting::Value(Proxy {
             uri,
             method,
-            timeout,
             headers,
         })
     }

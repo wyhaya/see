@@ -2,17 +2,17 @@ use hyper::{Body, Request, Uri};
 use lazy_static::lazy_static;
 use regex::Regex;
 
-const REQUEST_PATH: &str = "${request_path}";
-const REQUEST_QUERY: &str = "${request_query}";
-const REQUEST_URI: &str = "${request_uri}";
-const REQUEST_METHOD: &str = "${request_method}";
+const REQUEST_PATH: &str = "${path}";
+const REQUEST_QUERY: &str = "${query}";
+const REQUEST_URI: &str = "${uri}";
+const REQUEST_METHOD: &str = "${method}";
 
-const REQUEST_QUERY_KEY: &str = "request_query_";
-const REQUEST_HEADER_KEY: &str = "request_header_";
+const REQUEST_QUERY_KEY: &str = "query_";
+const REQUEST_HEADER_KEY: &str = "header_";
 
 lazy_static! {
-    static ref REGEX_QUERY: Regex = Regex::new(r"\$\{request_query_([\w|-]+)\}").unwrap();
-    static ref REGEX_HEADER: Regex = Regex::new(r"\$\{request_header_([\w|-]+)\}").unwrap();
+    static ref REGEX_QUERY: Regex = Regex::new(r"\$\{query_([\w|-]+)\}").unwrap();
+    static ref REGEX_HEADER: Regex = Regex::new(r"\$\{header_([\w|-]+)\}").unwrap();
 }
 
 #[derive(Debug, Clone)]
@@ -171,4 +171,9 @@ impl GetQuery for Uri {
         }
         None
     }
+}
+
+#[test]
+fn test_var() {
+    let _ = Var::from("${path}");
 }

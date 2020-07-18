@@ -1,3 +1,4 @@
+use crate::default::CONNECT_TIMEOUT;
 use futures::future::FutureExt;
 use hyper::client::connect::{Connected, Connection};
 use hyper::client::HttpConnector;
@@ -34,6 +35,7 @@ pub struct Connector<T> {
 impl Connector<HttpConnector> {
     pub fn new() -> Self {
         let mut http = HttpConnector::new();
+        http.set_connect_timeout(Some(CONNECT_TIMEOUT));
         http.enforce_http(false);
 
         let mut config = ClientConfig::new();

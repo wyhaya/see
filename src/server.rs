@@ -20,10 +20,11 @@ pub async fn run(tcp: TcpListener, config: ServerConfig) {
 
         async move {
             let (stream, ip) = match rst {
-                Ok(r) => r,
+                Ok((stream, ip)) => (stream, ip),
                 Err(_) => return None,
             };
 
+            // HTTPS
             if let Some(tls) = &config.tls {
                 let stream = match tls.clone().accept(stream).await {
                     Ok(s) => s,
@@ -32,20 +33,17 @@ pub async fn run(tcp: TcpListener, config: ServerConfig) {
                 };
 
                 let (_, session) = stream.get_ref();
-                let name = session.get_sni_hostname().unwrap();
+                let hostname = match session.get_sni_hostname() {
+                    Some(name) => name,
+                    None => return None,
+                };
 
                 let c = config
                     .sites
                     .iter()
-                    .find(|d| {
-                        if let Some(n) = &d.sni_name {
-                            return n == name;
-                        }
-                        false
-                    })
+                    .find(|d| d.sni_name.as_ref().map(|n| n == hostname).unwrap_or(false))
                     .unwrap();
 
-                // Use HTTPS response
                 return Some(Ok::<_, hyper::Error>(Connect::TlsStream(
                     stream,
                     ip,
@@ -53,7 +51,7 @@ pub async fn run(tcp: TcpListener, config: ServerConfig) {
                 )));
             }
 
-            // Use HTTP response
+            // HTTP
             Some(Ok::<_, hyper::Error>(Connect::Stream(
                 stream,
                 ip,

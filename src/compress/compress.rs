@@ -1,8 +1,8 @@
-use crate::*;
+use crate::{default, exit};
 use async_compression::stream::{BrotliEncoder, DeflateEncoder, GzipEncoder};
 pub use async_compression::Level as CompressLevel;
 use futures::stream::{self, StreamExt};
-use hyper::body::Bytes;
+use hyper::body::{Body, Bytes};
 use hyper::header::HeaderValue;
 use tokio::fs::File;
 use tokio_util::codec::{BytesCodec, FramedRead};
@@ -45,20 +45,20 @@ impl Level for CompressLevel {
     }
 }
 
-pub struct ComressBody {
-    encoding: Option<CompressMode>,
+pub struct BodyStream {
+    compress: Option<CompressMode>,
 }
 
-impl ComressBody {
-    pub fn new(encoding: Option<CompressMode>) -> Self {
-        Self { encoding }
+impl BodyStream {
+    pub fn new(compress: Option<CompressMode>) -> Self {
+        Self { compress }
     }
 
     pub fn file(self, file: File) -> Body {
         let file = FramedRead::with_capacity(file, BytesCodec::new(), default::BUF_SIZE)
             .map(|rst| rst.map(|bytes| bytes.freeze()));
 
-        match self.encoding {
+        match self.compress {
             Some(mode) => match mode {
                 CompressMode::Gzip(level) => {
                     Body::wrap_stream(GzipEncoder::with_quality(file, level))
@@ -75,7 +75,7 @@ impl ComressBody {
     }
 
     pub fn content(self, text: String) -> Body {
-        match self.encoding {
+        match self.compress {
             Some(mode) => {
                 let text = stream::once(async move { Ok(Bytes::from(text)) });
                 match mode {
