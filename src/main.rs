@@ -18,7 +18,7 @@ use config::{
     default, mime, AbsolutePath, Directory, ErrorPage, Force, RewriteStatus, ServerConfig, Setting,
     SiteConfig,
 };
-use futures::future::join_all;
+use futures_util::future::join_all;
 use hyper::header::{
     HeaderValue, ACCEPT_ENCODING, ALLOW, AUTHORIZATION, CONTENT_ENCODING, CONTENT_LENGTH,
     CONTENT_TYPE, HOST, LOCATION, SERVER, WWW_AUTHENTICATE,

@@ -1,5 +1,5 @@
 use crate::default::CONNECT_TIMEOUT;
-use futures::future::FutureExt;
+use futures_util::future::FutureExt;
 use hyper::client::connect::{Connected, Connection};
 use hyper::client::HttpConnector;
 use hyper::service::Service;

@@ -1,7 +1,7 @@
 use crate::{default, exit};
 use async_compression::stream::{BrotliEncoder, DeflateEncoder, GzipEncoder};
 pub use async_compression::Level as CompressLevel;
-use futures::stream::{self, StreamExt};
+use futures_util::stream::{self, StreamExt};
 use hyper::body::{Body, Bytes};
 use hyper::header::HeaderValue;
 use tokio::fs::File;

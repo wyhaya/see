@@ -1,5 +1,5 @@
 use crate::util::bytes_to_size;
-use futures::future::try_join_all;
+use futures_util::future::try_join_all;
 use std::path::PathBuf;
 use std::time::UNIX_EPOCH;
 use time::Timespec;

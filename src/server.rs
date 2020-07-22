@@ -1,6 +1,7 @@
 use crate::config::{ServerConfig, SiteConfig};
 use crate::connect;
-use futures::{ready, Stream, StreamExt};
+use futures_util::ready;
+use futures_util::stream::{Stream, StreamExt};
 use hyper::server::accept::from_stream;
 use hyper::server::conn::Http;
 use hyper::server::Builder;
