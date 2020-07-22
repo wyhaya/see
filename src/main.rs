@@ -498,12 +498,12 @@ async fn response_proxy(mut req: Request<Body>, config: &SiteConfig) -> Response
     let c = config.proxy.clone().into_value();
     let encoding = req.headers().get(ACCEPT_ENCODING).cloned();
 
-    let uri = util::get_rand_item(&c.uri).clone().map(|s, r| {
+    let url = util::get_rand_item(&c.url).clone().map(|s, r| {
         let result = r.replace(s, &req);
         result.parse::<Uri>().unwrap()
     });
 
-    *req.uri_mut() = uri;
+    *req.uri_mut() = url;
     if let Some(method) = c.method {
         *req.method_mut() = method;
     }

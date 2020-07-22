@@ -34,7 +34,7 @@ pub trait Force {
     fn to_socket_addr(&self) -> SocketAddr;
     fn to_ip_addr(&self) -> IpAddr;
     fn to_strftime(&self);
-    fn to_uri(&self) -> Uri;
+    fn to_url(&self) -> Uri;
 }
 
 impl Force for &str {
@@ -78,8 +78,8 @@ impl Force for &str {
             .unwrap_or_else(|err| exit!("Cannot parse `{}` to time format\n{}", self, err));
     }
 
-    fn to_uri(&self) -> Uri {
+    fn to_url(&self) -> Uri {
         self.parse::<Uri>()
-            .unwrap_or_else(|err| exit!("Cannot parse `{}` to http uri\n{}", self, err))
+            .unwrap_or_else(|err| exit!("Cannot parse `{}` to http url\n{}", self, err))
     }
 }

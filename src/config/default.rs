@@ -36,7 +36,7 @@ pub const BUF_SIZE: usize = 16 * 1024;
 pub const CONNECT_TIMEOUT: Duration = Duration::from_millis(5000);
 
 // Should be synchronized with src/var.rs
-pub const LOG_FORMAT: &str = "${method} ${header_host}${uri} ${header_user-agent}";
+pub const LOG_FORMAT: &str = "${method} ${header_host}${url} ${header_user-agent}";
 
 // Quick start
 

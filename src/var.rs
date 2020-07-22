@@ -4,7 +4,7 @@ use regex::Regex;
 
 const REQUEST_PATH: &str = "${path}";
 const REQUEST_QUERY: &str = "${query}";
-const REQUEST_URI: &str = "${uri}";
+const REQUEST_URL: &str = "${url}";
 const REQUEST_METHOD: &str = "${method}";
 
 const REQUEST_QUERY_KEY: &str = "query_";
@@ -51,7 +51,7 @@ impl<T> Var<T> {
 pub struct Replace {
     path: bool,
     query: bool,
-    uri: bool,
+    url: bool,
     method: bool,
     query_key: bool,
     header_key: bool,
@@ -69,8 +69,8 @@ impl Replace {
         if text.contains(REQUEST_QUERY) {
             replace.query = true;
         }
-        if text.contains(REQUEST_URI) {
-            replace.uri = true;
+        if text.contains(REQUEST_URL) {
+            replace.url = true;
         }
         if text.contains(REQUEST_METHOD) {
             replace.method = true;
@@ -84,7 +84,7 @@ impl Replace {
 
         if replace.path
             || replace.query
-            || replace.uri
+            || replace.url
             || replace.method
             || replace.query_key
             || replace.header_key
@@ -111,14 +111,14 @@ impl Replace {
             }
         }
 
-        if self.uri {
+        if self.url {
             let query = req
                 .uri()
                 .query()
                 .map(|q| format!("?{}", q))
                 .unwrap_or_else(|| String::with_capacity(0));
-            let uri = format!("{}{}", req.uri().path(), query);
-            source = source.replace(REQUEST_URI, &uri);
+            let url = format!("{}{}", req.uri().path(), query);
+            source = source.replace(REQUEST_URL, &url);
         }
 
         if self.method {

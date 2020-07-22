@@ -251,7 +251,7 @@ pub struct ErrorPage {
 
 #[derive(Debug, Clone)]
 pub struct Proxy {
-    pub uri: Vec<Var<Uri>>,
+    pub url: Vec<Var<Uri>>,
     pub method: Option<Method>,
     pub headers: Setting<Headers>,
 }
@@ -720,12 +720,12 @@ impl Parser {
         setting_value!(proxy);
 
         self.yaml
-            .check("proxy", &["uri", "method", "timeout", "header"], &["uri"]);
+            .check("proxy", &["url", "method", "timeout", "header"], &["url"]);
 
-        let uri = proxy
-            .key_to_multiple_string("uri")
+        let url = proxy
+            .key_to_multiple_string("url")
             .iter()
-            .map(|u| Var::from(u).map_none(|s| s.as_str().to_uri()))
+            .map(|u| Var::from(u).map_none(|s| s.as_str().to_url()))
             .collect::<Vec<Var<Uri>>>();
 
         let method = if proxy["method"].is_badvalue() {
@@ -738,7 +738,7 @@ impl Parser {
         let headers = Parser::new(proxy.clone()).headers();
 
         Setting::Value(Proxy {
-            uri,
+            url,
             method,
             headers,
         })

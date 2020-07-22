@@ -10,14 +10,14 @@ ${VAR}
 ```
 
 ```yaml
-echo: Hello ${request_path}, ${request_header_host}
+echo: Hello ${path}, ${header_host}
 ```
 
-* `${request_path}`
-* `${request_query}`
-* `${request_uri}`
-* `${request_method}`
-* `${request_query_NAME}`
-* `${request_header_NAME}`
+* `${path}`
+* `${query}`
+* `${url}`
+* `${method}`
+* `${query_NAME}`
+* `${header_NAME}`
 
 ---

@@ -186,15 +186,15 @@ Proxy options
 
 ```yaml
 proxy:
-  uri: http://example.com  # Proxy address
+  url: http://example.com  # Proxy address
   method: GET              # Change the method of the proxy
   header:                  # Header in proxy request
     key: value
 # or
 proxy:                     # Rand proxy
-  uri:
+  url:
     - http://example1.com
-    - http://example2.com${request_uri}
+    - http://example2.com${url}
 
 ```
 
