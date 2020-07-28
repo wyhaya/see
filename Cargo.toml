@@ -17,6 +17,11 @@ keywords = [
     "server"
 ]
 
+[profile.release]
+lto = true
+codegen-units = 1
+# strip = "symbols"
+
 [dependencies]
 ace = "0.2.0"
 async-compression = { version = "0.3.5", features = ["stream", "gzip", "deflate", "brotli"] }

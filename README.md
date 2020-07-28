@@ -20,13 +20,27 @@ An HTTP server for hosting static files
 
 ## Install
 
+### Binary
+
 [Download](https://github.com/wyhaya/see/releases) the binary from the release page
 
-Or use `cargo` to install
+### Cargo
 
 ```bash
 cargo install see
+# or
+cargo install --git https://github.com/wyhaya/see
 ```
+
+### Docker
+
+```bash
+docker pull wyhaya/see
+cd your-dir && touch config.yml && vim config.yml ...
+docker run -idt --name see -v your-dir:/.see -p 80:80 -p 443:443 wyhaya/see
+```
+
+### More
 
 More ways to install [click](https://see.wyhaya.com/install.html)
 
