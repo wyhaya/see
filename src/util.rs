@@ -1,6 +1,4 @@
-use crate::{default, exit};
-use rand::prelude::Rng;
-use rand::thread_rng;
+use crate::exit;
 use std::env;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
@@ -16,12 +14,6 @@ pub fn home_dir() -> PathBuf {
     }
 }
 
-pub fn config_path() -> PathBuf {
-    home_dir()
-        .join(default::CONFIG_PATH[0])
-        .join(default::CONFIG_PATH[1])
-}
-
 pub fn dedup<T: Eq>(vec: Vec<T>) -> Vec<T> {
     let mut new = vec![];
     for item in vec {
@@ -30,15 +22,6 @@ pub fn dedup<T: Eq>(vec: Vec<T>) -> Vec<T> {
         }
     }
     new
-}
-
-pub fn get_rand_item<'a, T>(vec: &'a [T]) -> &'a T {
-    if vec.len() == 1 {
-        &vec[0]
-    } else {
-        let i = thread_rng().gen_range(0, vec.len());
-        &vec[i]
-    }
 }
 
 pub fn try_to_socket_addr(text: &str) -> Result<SocketAddr, ()> {
@@ -53,7 +36,7 @@ pub fn try_to_socket_addr(text: &str) -> Result<SocketAddr, ()> {
         }
     }
     // 80
-    if let Ok(port) = text.parse::<i64>() {
+    if let Ok(port) = text.parse::<u16>() {
         if let Ok(addr) = format!("0.0.0.0:{}", port).parse::<SocketAddr>() {
             return Ok(addr);
         }

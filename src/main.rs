@@ -15,8 +15,7 @@ use bright::Colorful;
 use compress::BodyStream;
 use config::Headers;
 use config::{
-    default, mime, AbsolutePath, Directory, ErrorPage, Force, RewriteStatus, ServerConfig, Setting,
-    SiteConfig,
+    default, mime, AbsolutePath, Directory, Force, RewriteStatus, ServerConfig, Setting, SiteConfig,
 };
 use futures_util::future::join_all;
 use hyper::header::{
@@ -26,7 +25,8 @@ use hyper::header::{
 use hyper::http::response::Builder;
 use hyper::Result as HyperResult;
 use hyper::{Body, HeaderMap, Method, Request, Response, StatusCode, Uri, Version};
-use matcher::HostMatcher;
+use rand::prelude::Rng;
+use rand::thread_rng;
 use std::net::{IpAddr, SocketAddr};
 use std::path::{Path, PathBuf};
 use tokio::fs::{self, File};
@@ -106,7 +106,7 @@ async fn async_main() {
                 values[0].clone()
             }
             None => {
-                let config = util::config_path();
+                let config = default::config_path();
                 if let Some(p) = config.parent() {
                     let _ = std::fs::create_dir_all(p);
                 }
@@ -178,7 +178,22 @@ impl IntoStatus for Builder {
     }
 }
 
-fn get_match_config(host: Option<&str>, configs: Vec<SiteConfig>) -> Option<SiteConfig> {
+fn get_match_config(req: &Request<Body>, configs: Vec<SiteConfig>) -> Option<SiteConfig> {
+    // todo
+    if req.version() == Version::HTTP_2 {
+        return Some(configs[0].clone());
+    }
+
+    let host = req.headers().get(HOST).map(|header| {
+        // Delete port
+        header
+            .to_str()
+            .unwrap_or_default()
+            .split(':')
+            .next()
+            .unwrap_or_default()
+    });
+
     match host {
         // Use the host in config to match the header host
         Some(host) => {
@@ -207,23 +222,13 @@ pub async fn connect(
     remote: IpAddr,
     configs: Vec<SiteConfig>,
 ) -> HyperResult<Response<Body>> {
-    let host = req.headers().get(HOST).map(|header| {
-        // Delete port
-        header
-            .to_str()
-            .unwrap_or_default()
-            .split(':')
-            .next()
-            .unwrap_or_default()
-    });
-
     // A Host header field must be sent in all HTTP/1.1 request messages
     // https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Host
-    if host.is_none() && req.version() == Version::HTTP_11 {
+    if req.headers().get(HOST).is_none() && req.version() == Version::HTTP_11 {
         return Ok(Response::builder().into_status(StatusCode::BAD_REQUEST));
     }
 
-    let mut res = match get_match_config(host, configs) {
+    let mut res = match get_match_config(&req, configs) {
         Some(mut config) => {
             // Decode request path
             let req_path = percent_encoding::percent_decode_str(req.uri().path())
@@ -489,7 +494,14 @@ async fn response_proxy(mut req: Request<Body>, config: &SiteConfig) -> Response
     let c = config.proxy.clone().into_value();
     let encoding = req.headers().get(ACCEPT_ENCODING).cloned();
 
-    let url = util::get_rand_item(&c.url).clone().map(|s, r| {
+    let url = if c.url.len() == 1 {
+        &c.url[0]
+    } else {
+        let i = thread_rng().gen_range(0, c.url.len());
+        &c.url[i]
+    };
+
+    let url = url.clone().map(|s, r| {
         let result = r.replace(s, &req);
         result.parse::<Uri>().unwrap()
     });
@@ -554,7 +566,7 @@ async fn response_html(html: String, req: &Request<Body>, config: &SiteConfig) -
         Some(encoding) => (CONTENT_ENCODING, encoding.to_header_value()),
         None => (CONTENT_LENGTH, HeaderValue::from(html.len())),
     };
-    let body = BodyStream::new(encoding).content(html);
+    let body = BodyStream::new(encoding).text(html);
     let mut res = Response::builder()
         .header(CONTENT_TYPE, mime::TEXT_HTML)
         .body(body)

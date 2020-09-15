@@ -29,9 +29,8 @@ pub struct ServerConfig {
 
 pub type Headers = HashMap<HeaderName, Var<HeaderValue>>;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct SiteConfig {
-    pub sni_name: Option<String>,
     pub host: HostMatcher,
     pub root: Option<PathBuf>,
     pub echo: Setting<Var<String>>,
@@ -309,8 +308,9 @@ impl ServerConfig {
 
             let parser = Parser::new(server["server"].clone());
             let listens = parser.listen();
-            let https = parser.https(&config_dir);
-            let sni_name = https.clone().map(|d| d.sni);
+            let host = parser.host();
+
+            let https = parser.https(&config_dir, host.get_raw());
 
             if let Some(tls) = https {
                 for listen in &listens {
@@ -329,8 +329,7 @@ impl ServerConfig {
             let root = parser.root(&config_dir);
 
             let site = SiteConfig {
-                sni_name,
-                host: parser.host(),
+                host,
                 root: root.clone(),
                 echo: parser.echo(),
                 file: parser.file(&config_dir),
@@ -466,18 +465,23 @@ impl Parser {
         dedup(vec)
     }
 
-    fn https(&self, config_dir: &Path) -> Option<TLSContent> {
+    fn https(&self, config_dir: &Path, hostname: Vec<&String>) -> Option<TLSContent> {
         let https = &self.yaml["https"];
         if https.is_badvalue() {
             return None;
         }
 
-        self.yaml
-            .check("https", &["cert", "key", "name"], &["cert", "key", "name"]);
+        self.yaml.check("https", &["cert", "key"], &["cert", "key"]);
 
         let cert = https.key_to_string("cert").absolute_path(config_dir);
         let key = https.key_to_string("key").absolute_path(config_dir);
-        let sni = https.key_to_string("name");
+
+        if hostname.is_empty() {
+            exit!("Miss 'host'");
+        }
+
+        // todo
+        let sni = hostname[0].clone();
 
         Some(TLSContent { cert, key, sni })
     }

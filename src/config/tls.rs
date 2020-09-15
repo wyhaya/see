@@ -10,9 +10,13 @@ use tokio_rustls::rustls::{
 };
 use tokio_rustls::TlsAcceptor;
 
+fn open_file<P: AsRef<Path>>(path: P) -> File {
+    File::open(&path)
+        .unwrap_or_else(|err| exit!("Open '{}' failed\n{:?}", path.as_ref().display(), err))
+}
+
 fn load_certs<P: AsRef<Path>>(path: P) -> Vec<Certificate> {
-    let file = File::open(&path)
-        .unwrap_or_else(|err| exit!("Open '{}' failed\n{:?}", path.as_ref().display(), err));
+    let file = open_file(&path);
 
     certs(&mut BufReader::new(file))
         .unwrap_or_else(|_| exit!("Load certs failed: {}", path.as_ref().display()))
@@ -20,16 +24,17 @@ fn load_certs<P: AsRef<Path>>(path: P) -> Vec<Certificate> {
 
 fn load_keys<P: AsRef<Path>>(path: P) -> Vec<PrivateKey> {
     let p = path.as_ref().display();
-    let file = || File::open(&path).unwrap_or_else(|err| exit!("Open '{}' failed\n{:?}", p, err));
 
-    let keys = rsa_private_keys(&mut BufReader::new(file()))
-        .unwrap_or_else(|_| exit!("Load rsa_private_keys failed: {}", &p));
+    let file = open_file(&path);
+    let keys = rsa_private_keys(&mut BufReader::new(file))
+        .unwrap_or_else(|_| exit!("Load rsa_private_keys failed: {}", p));
     if !keys.is_empty() {
         return keys;
     }
 
-    let keys = pkcs8_private_keys(&mut BufReader::new(file()))
-        .unwrap_or_else(|_| exit!("Load pkcs8_private_keys failed: {}", &p));
+    let file = open_file(&path);
+    let keys = pkcs8_private_keys(&mut BufReader::new(file))
+        .unwrap_or_else(|_| exit!("Load pkcs8_private_keys failed: {}", p));
     if !keys.is_empty() {
         return keys;
     }

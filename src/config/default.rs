@@ -1,5 +1,6 @@
 use crate::compress::CompressLevel;
-use crate::{Directory, ErrorPage, HostMatcher, ServerConfig, Setting, SiteConfig};
+use crate::util::home_dir;
+use crate::{Directory, ServerConfig, Setting, SiteConfig};
 use hyper::Method;
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -13,7 +14,9 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 // Config file
 
-pub const CONFIG_PATH: [&str; 2] = [".see", "config.yml"];
+pub fn config_path() -> PathBuf {
+    home_dir().join(".see").join("config.yml")
+}
 
 // Server config
 
@@ -34,38 +37,24 @@ pub const BUF_SIZE: usize = 16 * 1024;
 pub const CONNECT_TIMEOUT: Duration = Duration::from_millis(5000);
 
 // Should be synchronized with src/var.rs
-pub const LOG_FORMAT: &str = "${method} ${header_host}${url} ${header_user-agent}";
+pub const LOG_FORMAT: &str = "${method} ${header_host}${path}${query} ${header_user-agent}";
 
 // Quick start
 
-pub const START_PORT: i64 = 80;
+pub const START_PORT: u16 = 80;
 
 pub fn quick_start_config(root: PathBuf, listen: SocketAddr) -> ServerConfig {
+    let mut site = SiteConfig::default();
+    site.root = Some(root);
+    site.directory = Setting::Value(Directory {
+        time: Some(DIRECTORY_TIME_FORMAT.to_string()),
+        size: true,
+    });
+    site.methods = Setting::Value(ALLOW_METHODS.to_vec());
+
     ServerConfig {
         listen,
         tls: None,
-        sites: vec![SiteConfig {
-            sni_name: None,
-            host: HostMatcher::default(),
-            root: Some(root),
-            echo: Setting::None,
-            file: Setting::None,
-            index: Setting::None,
-            directory: Setting::Value(Directory {
-                time: Some(DIRECTORY_TIME_FORMAT.to_string()),
-                size: true,
-            }),
-            headers: Setting::None,
-            rewrite: Setting::None,
-            compress: Setting::None,
-            methods: Setting::Value(ALLOW_METHODS.to_vec()),
-            auth: Setting::None,
-            extensions: Setting::None,
-            error: ErrorPage::default(),
-            proxy: Setting::None,
-            log: Setting::None,
-            ip: Setting::None,
-            location: Vec::with_capacity(0),
-        }],
+        sites: vec![site],
     }
 }

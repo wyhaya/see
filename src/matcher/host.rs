@@ -49,6 +49,19 @@ impl HostMatcher {
         HostMatcher { modes }
     }
 
+    pub fn get_raw(&self) -> Vec<&String> {
+        let mut v = vec![];
+        for item in &self.modes {
+            match item {
+                MatchMode::Text(s) => {
+                    v.push(s);
+                }
+                _ => todo!(),
+            }
+        }
+        v
+    }
+
     pub fn is_empty(&self) -> bool {
         self.modes.is_empty()
     }

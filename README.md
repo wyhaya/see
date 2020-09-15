@@ -61,10 +61,10 @@ The default configuration file is in `~/.see/config.yml`
 - server:
     listen: 443
     root: /root/www
+    host: example.com
     https:
-      name: domain.com
-      key: /your/ssl.key
-      cert: /your/ssl.pem
+      key: ./ssl.key
+      cert: ./ssl.pem
 ```
 
 [Click](./docs/config.md) to view document

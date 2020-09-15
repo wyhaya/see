@@ -74,7 +74,7 @@ impl BodyStream {
         }
     }
 
-    pub fn content(self, text: String) -> Body {
+    pub fn text(self, text: String) -> Body {
         match self.compress {
             Some(mode) => {
                 let text = stream::once(async move { Ok(Bytes::from(text)) });

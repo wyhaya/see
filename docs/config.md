@@ -10,15 +10,6 @@ listen: 80 8080
 listen: 127.0.0.1:1234
 ```
 
-## https
-
-```yaml
-https:
-  name: domain.com
-  key: /root/ssl.key
-  cert: /root/ssl.pem
-```
-
 ## host
 
 ```yaml
@@ -35,6 +26,15 @@ host: ~/*.go+gle.com  # Regex
 root: /root/www
 # or
 root: ./www
+```
+
+## https
+
+```yaml
+host: example.com
+https:
+  key: /root/ssl.key
+  cert: /root/ssl.pem
 ```
 
 ## echo
@@ -171,7 +171,7 @@ proxy:
 proxy:                     # Rand proxy
   url:
     - http://example1.com
-    - http://example2.com${url}
+    - http://example2.com${path}
 ```
 
 ## log
@@ -236,8 +236,8 @@ Built-in variables can be used in `echo` `rewrite` `header` `proxy`
 
 * `${path}`
 * `${query}`
-* `${url}`
 * `${method}`
+* `${version}`
 * `${query_NAME}`
 * `${header_NAME}`
 
