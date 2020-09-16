@@ -31,6 +31,38 @@ cargo install see
 cargo install --git https://github.com/wyhaya/see
 ```
 
+### Docker
+
+```bash
+docker pull wyhaya/see
+```
+
+<details>
+    <summary>Example</summary>
+
+---
+Add the following to `config.yml`
+
+```yml
+- server:
+    listen: 80
+    echo: Hello world
+```
+
+```
+mkdir your-config && vim your-config/config.yml
+```
+
+Run container
+
+```bash
+docker run -idt --name see -p 80:80 -p 443:443 -v your-config:/.see wyhaya/see
+```
+
+Open [http://127.0.0.1](http://127.0.0.1) and you should see `hello world`.
+
+</details>
+
 ## Usage
 
 Quick start in current directory

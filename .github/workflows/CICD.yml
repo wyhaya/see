@@ -1,4 +1,4 @@
-name: Build
+name: CICD
 
 on: [push, pull_request]
 
@@ -95,3 +95,11 @@ jobs:
           command: publish
           args: --token ${{ secrets.CARGO_TOKEN }} -v
 
+      # -------------- Docker publish --------------
+
+      - name: Docker publish
+        if: startsWith(github.ref, 'refs/tags/') && matrix.job.publish
+        run: |
+          docker build . -t wyhaya/see
+          docker login -u wyhaya -p ${{ secrets.DOCKER_PASSWORD }}
+          docker push wyhaya/see
