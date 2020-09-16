@@ -168,10 +168,8 @@ proxy:
   header:                  # Header in proxy request
     key: value
 # or
-proxy:                     # Rand proxy
-  url:
-    - http://example1.com
-    - http://example2.com${path}
+proxy:
+  url: http://example.com${path}${query}
 ```
 
 ## log

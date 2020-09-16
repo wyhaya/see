@@ -25,8 +25,6 @@ use hyper::header::{
 use hyper::http::response::Builder;
 use hyper::Result as HyperResult;
 use hyper::{Body, HeaderMap, Method, Request, Response, StatusCode, Uri, Version};
-use rand::prelude::Rng;
-use rand::thread_rng;
 use std::net::{IpAddr, SocketAddr};
 use std::path::{Path, PathBuf};
 use tokio::fs::{self, File};
@@ -494,14 +492,7 @@ async fn response_proxy(mut req: Request<Body>, config: &SiteConfig) -> Response
     let c = config.proxy.clone().into_value();
     let encoding = req.headers().get(ACCEPT_ENCODING).cloned();
 
-    let url = if c.url.len() == 1 {
-        &c.url[0]
-    } else {
-        let i = thread_rng().gen_range(0, c.url.len());
-        &c.url[i]
-    };
-
-    let url = url.clone().map(|s, r| {
+    let url = c.url.map(|s, r| {
         let result = r.replace(s, &req);
         result.parse::<Uri>().unwrap()
     });

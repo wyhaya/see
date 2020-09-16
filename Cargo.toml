@@ -34,8 +34,7 @@ hyper = "0.13.7"
 lazy_static = "1.4.0"
 num_cpus = "1.13.0"
 percent-encoding = "2.1.0"
-rand = "0.7.3" # todo
-regex = "1.3.9" # todo
+regex = "1.3.9"
 time = "0.1.43"
 tokio = { version = "0.2.22", features = ["fs", "rt-threaded", "macros", "io-std"] }
 tokio-rustls = "0.14.1"
