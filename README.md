@@ -50,16 +50,16 @@ Add the following to `config.yml`
 ```
 
 ```
-mkdir your-config && vim your-config/config.yml
+mkdir see && vim see/config.yml
 ```
 
 Run container
 
 ```bash
-docker run -idt --name see -p 80:80 -p 443:443 -v your-config:/.see wyhaya/see
+docker run -idt --name see -p 80:80 -p 443:443 -v '$PWD'/see:/ wyhaya/see
 ```
 
-Open [http://127.0.0.1](http://127.0.0.1) and you should see `hello world`.
+Open [http://127.0.0.1](http://127.0.0.1) and you should see `hello world`
 
 </details>
 
@@ -81,7 +81,7 @@ see start -b 0.0.0.0:80 -p /root/www
 
 Use `yaml` format as a configuration file, You can use `see -c config.yml` to specify the configuration file location
 
-The default configuration file is in `~/.see/config.yml`
+The default configuration file is in `~/.see.yml`
 
 #### A simple example: 
 
