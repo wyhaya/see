@@ -11,9 +11,10 @@ A simple and fast web server
 
 ## Features
 
-* Supported HTTP/1 and HTTP/2
-* Content compression (auto, gzip, deflate, br)
-* Support directory list
+* Built on [tokio](https://github.com/tokio-rs/tokio) and [hyper](https://github.com/hyperium/hyper)
+* TLS verification based on [rustls](https://github.com/ctz/rustls)
+* Supports `HTTP/1` and `HTTP/2`
+* Content compression `auto` `gzip` `deflate` `br`
 * HTTP request proxy
 * ...
 
@@ -59,7 +60,7 @@ Run container
 docker run -idt --name see -p 80:80 -p 443:443 -v '$PWD'/see:/ wyhaya/see
 ```
 
-Open [http://127.0.0.1](http://127.0.0.1) and you should see `hello world`
+Open [localhost](http://127.0.0.1) and you should see `hello world`
 
 </details>
 
