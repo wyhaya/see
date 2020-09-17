@@ -1,4 +1,4 @@
-use crate::{exit, util};
+use crate::exit;
 use std::fmt::Display;
 use yaml_rust::yaml::Hash;
 use yaml_rust::Yaml;
@@ -107,18 +107,22 @@ impl YamlExtend for Yaml {
             Some(items) => {
                 for (i, item) in items.iter().enumerate() {
                     let s = item.to_string(format!("{}[{}]", key, i));
-                    result.push(s);
+                    if !result.contains(&s) {
+                        result.push(s);
+                    }
                 }
             }
             None => {
                 for line in self.key_to_string(key).lines() {
                     for s in line.split_whitespace() {
-                        result.push(s.to_string());
+                        if !result.contains(&s.to_string()) {
+                            result.push(s.to_string());
+                        }
                     }
                 }
             }
         }
 
-        util::dedup(result)
+        result
     }
 }

@@ -1,6 +1,6 @@
 use crate::{
-    compress, config, exit, logger, matcher, setting_none, setting_off, setting_value, util, var,
-    yaml, Setting,
+    compress, config, exit, logger, matcher, setting_none, setting_off, setting_value, var, yaml,
+    Setting,
 };
 use base64::encode;
 use compress::{CompressLevel, CompressMode, Encoding, Level};
@@ -10,12 +10,11 @@ use hyper::header::{HeaderName, HeaderValue};
 use hyper::{Method, Uri};
 use logger::Logger;
 use matcher::{HostMatcher, IpMatcher, LocationMatcher};
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::fs;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use tokio_rustls::TlsAcceptor;
-use util::*;
 use var::Var;
 use yaml::YamlExtend;
 use yaml_rust::{Yaml, YamlLoader};
@@ -364,7 +363,6 @@ impl ServerConfig {
         }
 
         for (listen, group) in tls_configs {
-            let group = dedup(group);
             let i = configs
                 .iter()
                 .position(|item| item.listen == listen)
@@ -455,14 +453,13 @@ impl Parser {
     }
 
     fn listen(&self) -> Vec<SocketAddr> {
-        let vec = self
-            .yaml
+        self.yaml
             .key_to_multiple_string("listen")
             .iter()
             .map(|s| s.as_str().to_socket_addr())
-            .collect();
-
-        dedup(vec)
+            .collect::<BTreeSet<SocketAddr>>()
+            .into_iter()
+            .collect()
     }
 
     fn https(&self, config_dir: &Path, hostname: Vec<&String>) -> Option<TLSContent> {

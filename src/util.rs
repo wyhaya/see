@@ -14,16 +14,6 @@ pub fn home_dir() -> PathBuf {
     }
 }
 
-pub fn dedup<T: Eq>(vec: Vec<T>) -> Vec<T> {
-    let mut new = vec![];
-    for item in vec {
-        if !new.contains(&item) {
-            new.push(item);
-        }
-    }
-    new
-}
-
 pub fn try_to_socket_addr(text: &str) -> Result<SocketAddr, ()> {
     // 0.0.0.0:80
     if let Ok(addr) = text.parse::<SocketAddr>() {
@@ -64,12 +54,6 @@ pub fn get_extension(p: &PathBuf) -> Option<&str> {
     p.extension()
         .map(|ext| ext.to_str())
         .unwrap_or_else(|| Some(""))
-}
-
-#[test]
-fn test_dedup() {
-    assert_eq!(dedup(vec![1, 1]), vec![1]);
-    assert_eq!(dedup(vec![1, 2, 3]), vec![1, 2, 3]);
 }
 
 #[test]
