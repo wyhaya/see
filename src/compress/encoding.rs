@@ -24,7 +24,7 @@ impl Encoding {
         }
     }
 
-    pub fn get_compress_mode(self, modes: &[&str]) -> Option<CompressMode> {
+    pub fn compress_mode(self, modes: &[&str]) -> Option<CompressMode> {
         match self {
             Encoding::Auto(level) => {
                 for mode in modes {

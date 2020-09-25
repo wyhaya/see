@@ -26,11 +26,10 @@ codegen-units = 1
 ace = "0.2.0"
 async-compression = { version = "0.3.5", features = ["stream", "gzip", "deflate", "brotli"] }
 base64 = "0.12.3"
-bright = "0.4.0"
 dirs = "3.0.1"
 futures-util = { version = "0.3.5", default-features = false, features = ["std"] }
 globset = "0.4.5"
-hyper = "0.13.7"
+hyper = "0.13.8"
 lazy_static = "1.4.0"
 num_cpus = "1.13.0"
 percent-encoding = "2.1.0"

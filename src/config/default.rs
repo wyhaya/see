@@ -1,6 +1,7 @@
 use crate::compress::CompressLevel;
+use crate::directory::Directory;
 use crate::util::home_dir;
-use crate::{Directory, ServerConfig, Setting, SiteConfig};
+use crate::{ServerConfig, Setting, SiteConfig};
 use hyper::Method;
 use std::net::SocketAddr;
 use std::path::PathBuf;

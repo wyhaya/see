@@ -42,7 +42,7 @@ https:
 ```yaml
 echo: Hello wrold
 # or
-echo: Hello, ${request_path}
+echo: Hello, ${path}
 ```
 
 ## file
@@ -134,14 +134,12 @@ auth:
   password: password
 ```
 
-## extension
-
-Sets file extension fallbacks
+## try
 
 ```yaml
-extension:  
-  - html
-  - htm
+try:
+  - ${path}.html
+  - index.html
 ```
 
 ## error
@@ -182,7 +180,7 @@ log:
 # or
 log:
   file: /var/log/www.log
-  format: ${request_path} ${header_host}
+  format: ${path} ${header_host}
 ```
 
 ## ip

@@ -1,3 +1,5 @@
+use crate::directory::Directory;
+use crate::util;
 use crate::{
     compress, config, exit, logger, matcher, setting_none, setting_off, setting_value, var, yaml,
     Setting,
@@ -6,7 +8,9 @@ use base64::encode;
 use compress::{CompressLevel, CompressMode, Encoding, Level};
 use config::tls::{create_sni_server_config, TLSContent};
 use config::{default, AbsolutePath, Force};
+use hyper::header::AUTHORIZATION;
 use hyper::header::{HeaderName, HeaderValue};
+use hyper::{Body, Request};
 use hyper::{Method, Uri};
 use logger::Logger;
 use matcher::{HostMatcher, IpMatcher, LocationMatcher};
@@ -14,10 +18,13 @@ use std::collections::{BTreeSet, HashMap};
 use std::fs;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
+use tokio::fs::File;
 use tokio_rustls::TlsAcceptor;
 use var::Var;
 use yaml::YamlExtend;
 use yaml_rust::{Yaml, YamlLoader};
+
+pub type Headers = HashMap<HeaderName, Var<HeaderValue>>;
 
 #[derive(Clone)]
 pub struct ServerConfig {
@@ -26,27 +33,46 @@ pub struct ServerConfig {
     pub sites: Vec<SiteConfig>,
 }
 
-pub type Headers = HashMap<HeaderName, Var<HeaderValue>>;
-
 #[derive(Debug, Clone, Default)]
 pub struct SiteConfig {
     pub host: HostMatcher,
     pub root: Option<PathBuf>,
     pub echo: Setting<Var<String>>,
     pub file: Setting<PathBuf>,
-    pub index: Setting<Vec<String>>,
+    pub index: Setting<Index>,
     pub directory: Setting<Directory>,
     pub headers: Setting<Headers>,
     pub rewrite: Setting<Rewrite>,
     pub compress: Setting<Compress>,
     pub methods: Setting<Vec<Method>>,
-    pub auth: Setting<String>,
-    pub extensions: Setting<Vec<String>>,
+    pub auth: Setting<Auth>,
+    pub try_: Setting<Vec<Var<String>>>,
     pub error: ErrorPage,
     pub proxy: Setting<Proxy>,
     pub log: Setting<Logger>,
     pub ip: Setting<IpMatcher>,
     pub location: Vec<Location>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Location {
+    pub location: LocationMatcher,
+    pub break_: bool,
+    pub root: Option<PathBuf>,
+    pub echo: Setting<Var<String>>,
+    pub file: Setting<PathBuf>,
+    pub index: Setting<Index>,
+    pub directory: Setting<Directory>,
+    pub headers: Setting<Headers>,
+    pub rewrite: Setting<Rewrite>,
+    pub compress: Setting<Compress>,
+    pub methods: Setting<Vec<Method>>,
+    pub auth: Setting<Auth>,
+    pub try_: Setting<Vec<Var<String>>>,
+    pub error: ErrorPage,
+    pub proxy: Setting<Proxy>,
+    pub log: Setting<Logger>,
+    pub ip: Setting<IpMatcher>,
 }
 
 impl SiteConfig {
@@ -91,8 +117,8 @@ impl SiteConfig {
             if !item.auth.is_none() {
                 self.auth = item.auth;
             }
-            if !item.extensions.is_none() {
-                self.extensions = item.extensions;
+            if !item.try_.is_none() {
+                self.try_ = item.try_;
             }
             if !item.proxy.is_none() {
                 self.proxy = item.proxy;
@@ -129,30 +155,23 @@ impl SiteConfig {
 }
 
 #[derive(Debug, Clone)]
-pub struct Location {
-    pub location: LocationMatcher,
-    pub break_: bool,
-    pub root: Option<PathBuf>,
-    pub echo: Setting<Var<String>>,
-    pub file: Setting<PathBuf>,
-    pub index: Setting<Vec<String>>,
-    pub directory: Setting<Directory>,
-    pub headers: Setting<Headers>,
-    pub rewrite: Setting<Rewrite>,
-    pub compress: Setting<Compress>,
-    pub methods: Setting<Vec<Method>>,
-    pub auth: Setting<String>,
-    pub extensions: Setting<Vec<String>>,
-    pub error: ErrorPage,
-    pub proxy: Setting<Proxy>,
-    pub log: Setting<Logger>,
-    pub ip: Setting<IpMatcher>,
-}
+pub struct Index(Vec<String>);
 
-#[derive(Debug, Clone)]
-pub struct Directory {
-    pub time: Option<String>,
-    pub size: bool,
+impl Index {
+    pub async fn from_directory(&self, dir: PathBuf) -> Option<(File, String)> {
+        for filename in &self.0 {
+            let mut path = dir.clone();
+            path.push(filename);
+            if util::is_file(&path).await {
+                if let Ok(file) = File::open(&path).await {
+                    if let Some(ext) = util::get_extension(&path) {
+                        return Some((file, ext.to_string()));
+                    }
+                }
+            }
+        }
+        None
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -214,7 +233,7 @@ impl Compress {
             Err(_) => return None,
         };
         for encoding in &self.modes {
-            if let Some(compress) = encoding.get_compress_mode(&header) {
+            if let Some(compress) = encoding.compress_mode(&header) {
                 return Some(compress);
             }
         }
@@ -229,12 +248,29 @@ impl Compress {
                 Err(_) => return None,
             };
             for encoding in &self.modes {
-                if let Some(compress) = encoding.get_compress_mode(&header) {
+                if let Some(compress) = encoding.compress_mode(&header) {
                     return Some(compress);
                 }
             }
         }
         None
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Auth(String);
+
+impl Auth {
+    fn new(user: String, password: String) -> Self {
+        let s = format!("{}:{}", user, password);
+        Self(format!("Basic {}", encode(&s)))
+    }
+
+    pub fn check(&self, req: &Request<Body>) -> bool {
+        req.headers()
+            .get(AUTHORIZATION)
+            .map(|val| val == &self.0)
+            .unwrap_or(false)
     }
 }
 
@@ -294,7 +330,7 @@ impl ServerConfig {
                     "compress",
                     "method",
                     "auth",
-                    "extension",
+                    "try",
                     "error",
                     "proxy",
                     "log",
@@ -337,7 +373,7 @@ impl ServerConfig {
                 headers: parser.headers(),
                 rewrite: parser.rewrite(),
                 compress: parser.compress(),
-                extensions: parser.extensions(),
+                try_: parser.try_(),
                 methods: parser.methods(true),
                 error: parser.error(&root),
                 proxy: parser.proxy(),
@@ -413,7 +449,7 @@ impl Parser {
                     "compress",
                     "method",
                     "auth",
-                    "extension",
+                    "try",
                     "error",
                     "proxy",
                     "log",
@@ -442,7 +478,7 @@ impl Parser {
                 compress: parser.compress(),
                 methods: parser.methods(false),
                 auth: parser.auth(),
-                extensions: parser.extensions(),
+                try_: parser.try_(),
                 error: parser.error(&root),
                 proxy: parser.proxy(),
                 log: parser.log(&config_dir).await,
@@ -511,21 +547,21 @@ impl Parser {
         Setting::Value(path)
     }
 
-    fn index(&self, set_default: bool) -> Setting<Vec<String>> {
+    fn index(&self, set_default: bool) -> Setting<Index> {
         let index = &self.yaml["index"];
         setting_off!(index);
 
         if set_default {
             setting_none!(
                 index,
-                default::INDEX.iter().map(|i| (*i).to_string()).collect()
+                Index(default::INDEX.iter().map(|i| (*i).to_string()).collect())
             );
         } else {
             setting_none!(index);
         }
 
         let vec = self.yaml.key_to_multiple_string("index");
-        Setting::Value(vec)
+        Setting::Value(Index(vec))
     }
 
     fn directory(&self) -> Setting<Directory> {
@@ -640,10 +676,16 @@ impl Parser {
         Setting::Value(Compress { modes, extensions })
     }
 
-    fn extensions(&self) -> Setting<Vec<String>> {
-        setting_value!(self.yaml["extension"]);
+    fn try_(&self) -> Setting<Vec<Var<String>>> {
+        setting_value!(self.yaml["try"]);
 
-        let vec = self.yaml.key_to_multiple_string("extension");
+        let vec = self
+            .yaml
+            .key_to_multiple_string("try")
+            .iter()
+            .map(|s| Var::from(s))
+            .collect::<Vec<Var<String>>>();
+
         Setting::Value(vec)
     }
 
@@ -667,20 +709,17 @@ impl Parser {
         Setting::Value(methods)
     }
 
-    fn auth(&self) -> Setting<String> {
+    fn auth(&self) -> Setting<Auth> {
         let auth = &self.yaml["auth"];
         setting_value!(auth);
 
         self.yaml
             .check("auth", &["user", "password"], &["user", "password"]);
 
-        let s = format!(
-            "{}:{}",
+        Setting::Value(Auth::new(
             auth.key_to_string("user"),
-            auth.key_to_string("password")
-        );
-
-        Setting::Value(format!("Basic {}", encode(&s)))
+            auth.key_to_string("password"),
+        ))
     }
 
     fn error(&self, root: &Option<PathBuf>) -> ErrorPage {
