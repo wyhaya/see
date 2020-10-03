@@ -29,7 +29,7 @@ pub const COMPRESS_LEVEL: CompressLevel = CompressLevel::Default;
 
 pub const COMPRESS_EXTENSIONS: [&str; 5] = ["html", "css", "js", "json", "png"];
 
-pub const INDEX: [&str; 2] = ["index.html", "index.htm"];
+pub const INDEX: [&str; 1] = ["index.html"];
 
 pub const DIRECTORY_TIME_FORMAT: &str = "%Y-%m-%d %H:%M";
 
