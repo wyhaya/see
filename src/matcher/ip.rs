@@ -1,4 +1,4 @@
-use crate::config::Force;
+use crate::config::transform;
 use crate::matcher::{WildcardMatcher, ANY_WORD};
 use std::net::IpAddr;
 
@@ -19,7 +19,7 @@ impl From<&str> for MatchMode {
         if raw.contains(ANY_WORD) {
             MatchMode::Wildcard(WildcardMatcher::new(raw))
         } else {
-            MatchMode::Ip(raw.to_ip_addr())
+            MatchMode::Ip(transform::to_ip_addr(raw))
         }
     }
 }

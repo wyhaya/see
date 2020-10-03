@@ -1,13 +1,13 @@
 #[macro_export]
-macro_rules! setting_value {
+macro_rules! check_value {
     ($yaml: expr) => {
-        setting_none!($yaml);
-        setting_off!($yaml);
+        check_none!($yaml);
+        check_off!($yaml);
     };
 }
 
 #[macro_export]
-macro_rules! setting_none {
+macro_rules! check_none {
     ($yaml: expr) => {
         if $yaml.is_badvalue() || $yaml.is_null() {
             return Setting::None;
@@ -21,7 +21,7 @@ macro_rules! setting_none {
 }
 
 #[macro_export]
-macro_rules! setting_off {
+macro_rules! check_off {
     ($yaml: expr) => {
         if let Some(val) = $yaml.as_bool() {
             if !val {
@@ -40,24 +40,15 @@ pub enum Setting<T> {
 
 impl<T> Setting<T> {
     pub fn is_value(&self) -> bool {
-        match self {
-            Setting::Value(_) => true,
-            _ => false,
-        }
+        matches!(self, Setting::Value(_))
     }
 
     pub fn is_none(&self) -> bool {
-        match self {
-            Setting::None => true,
-            _ => false,
-        }
+        matches!(self, Setting::None)
     }
 
     pub fn is_off(&self) -> bool {
-        match self {
-            Setting::Off => true,
-            _ => false,
-        }
+        matches!(self, Setting::Off)
     }
 
     pub fn into_value(self) -> T {

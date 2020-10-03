@@ -1,9 +1,9 @@
 use futures_util::future::try_join_all;
 use std::path::PathBuf;
+use std::result::Result;
 use std::time::UNIX_EPOCH;
 use time::Timespec;
 use tokio::fs::{self, DirEntry};
-use tokio::io::{self, Error, ErrorKind, Result};
 use tokio::stream::StreamExt;
 
 // HTML directory template
@@ -75,13 +75,19 @@ pub struct Directory {
 }
 
 impl Directory {
-    pub async fn render(&self, dir: &PathBuf, title: &str) -> io::Result<String> {
-        let mut dir = fs::read_dir(dir).await?;
+    pub async fn render(&self, dir: &PathBuf, title: &str) -> Result<String, ()> {
+        let mut dir = fs::read_dir(dir).await.map_err(|_| ())?;
         let mut fus = vec![];
 
         while let Some(entry) = dir.next().await {
-            let entry = entry?;
-            fus.push(Self::entry_content(entry, &self.time, self.size));
+            let entry = entry.map_err(|_| ())?;
+            if let Some(name) = entry.file_name().to_str() {
+                if !name.starts_with('.') {
+                    fus.push(Self::render_row(entry, &self.time, self.size));
+                }
+            } else {
+                return Err(());
+            }
         }
 
         let content = try_join_all(fus).await?.join("");
@@ -104,16 +110,10 @@ impl Directory {
         Ok(template)
     }
 
-    async fn entry_content(
-        entry: DirEntry,
-        time: &Option<String>,
-        size: bool,
-    ) -> Result<String> {
-        let meta = entry.metadata().await?;
-        let os_file_name = entry.file_name();
-        let name = os_file_name
-            .to_str()
-            .ok_or_else(|| Error::new(ErrorKind::Other, ""))?;
+    async fn render_row(entry: DirEntry, time: &Option<String>, size: bool) -> Result<String, ()> {
+        let meta = entry.metadata().await.map_err(|_| ())?;
+        let name = entry.file_name();
+        let name = name.to_str().unwrap();
         let mut content = String::new();
 
         if meta.is_file() {
@@ -124,9 +124,10 @@ impl Directory {
 
         if let Some(format) = &time {
             let dur = meta
-                .modified()?
+                .modified()
+                .map_err(|_| ())?
                 .duration_since(UNIX_EPOCH)
-                .map_err(|_| Error::new(ErrorKind::Other, ""))?;
+                .map_err(|_| ())?;
             let spec = Timespec::new(dur.as_secs() as i64, dur.subsec_nanos() as i32);
 
             content.push_str(&format!(

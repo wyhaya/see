@@ -1,13 +1,12 @@
 use crate::directory::Directory;
 use crate::util;
 use crate::{
-    compress, config, exit, logger, matcher, setting_none, setting_off, setting_value, var, yaml,
-    Setting,
+    check_none, check_off, check_value, compress, config, exit, logger, matcher, var, yaml, Setting,
 };
 use base64::encode;
 use compress::{CompressLevel, CompressMode, Encoding, Level};
 use config::tls::{create_sni_server_config, TLSContent};
-use config::{default, AbsolutePath, Force};
+use config::{default, transform, AbsolutePath};
 use hyper::header::AUTHORIZATION;
 use hyper::header::{HeaderName, HeaderValue};
 use hyper::{Body, Request};
@@ -208,7 +207,7 @@ impl From<String> for Rewrite {
 
         let location = split
             .next()
-            .map(|s| Var::from(s).map_none(|s| s.as_str().to_header_value()))
+            .map(|s| Var::from(s).map_none(transform::to_header_value))
             .unwrap_or_else(|| exit!("Could not find redirected url"));
 
         let status = split.next().map(RewriteStatus::from).unwrap_or_default();
@@ -492,7 +491,7 @@ impl Parser {
         self.yaml
             .key_to_multiple_string("listen")
             .iter()
-            .map(|s| s.as_str().to_socket_addr())
+            .map(transform::to_socket_addr)
             .collect::<BTreeSet<SocketAddr>>()
             .into_iter()
             .collect()
@@ -534,14 +533,14 @@ impl Parser {
     }
 
     fn echo(&self) -> Setting<Var<String>> {
-        setting_value!(self.yaml["echo"]);
+        check_value!(self.yaml["echo"]);
 
         let var = Var::from(self.yaml.key_to_string("echo"));
         Setting::Value(var)
     }
 
     fn file<P: AsRef<Path>>(&self, root: P) -> Setting<PathBuf> {
-        setting_value!(self.yaml["file"]);
+        check_value!(self.yaml["file"]);
 
         let path = self.yaml.key_to_string("file").absolute_path(root);
         Setting::Value(path)
@@ -549,15 +548,15 @@ impl Parser {
 
     fn index(&self, set_default: bool) -> Setting<Index> {
         let index = &self.yaml["index"];
-        setting_off!(index);
+        check_off!(index);
 
         if set_default {
-            setting_none!(
+            check_none!(
                 index,
                 Index(default::INDEX.iter().map(|i| (*i).to_string()).collect())
             );
         } else {
-            setting_none!(index);
+            check_none!(index);
         }
 
         let vec = self.yaml.key_to_multiple_string("index");
@@ -566,7 +565,7 @@ impl Parser {
 
     fn directory(&self) -> Setting<Directory> {
         let directory = &self.yaml["directory"];
-        setting_value!(directory);
+        check_value!(directory);
 
         // directory: true
         if directory.as_bool().is_some() {
@@ -592,7 +591,7 @@ impl Parser {
                 None => {
                     let format = directory.key_to_string("time");
                     // check
-                    format.as_str().to_strftime();
+                    let _ = transform::to_strftime(&format);
                     Some(format)
                 }
             }
@@ -608,17 +607,17 @@ impl Parser {
     }
 
     fn headers(&self) -> Setting<Headers> {
-        setting_value!(self.yaml["header"]);
+        check_value!(self.yaml["header"]);
 
         let hash = self.yaml.key_to_hash("header");
         let mut map = HashMap::new();
 
         for (i, (key, value)) in hash.iter().enumerate() {
             let key = key.to_string(format!("header[{}]", i));
-            let header_name = key.as_str().to_header_name();
+            let header_name = transform::to_header_name(&key);
 
             let value = Var::from(value.to_string(&key));
-            let header_value = value.map_none(|s| s.as_str().to_header_value());
+            let header_value = value.map_none(transform::to_header_value);
 
             map.insert(header_name, header_value);
         }
@@ -627,7 +626,7 @@ impl Parser {
     }
 
     fn rewrite(&self) -> Setting<Rewrite> {
-        setting_value!(self.yaml["rewrite"]);
+        check_value!(self.yaml["rewrite"]);
         let value = self.yaml.key_to_string("rewrite");
 
         Setting::Value(Rewrite::from(value))
@@ -635,7 +634,7 @@ impl Parser {
 
     fn compress(&self) -> Setting<Compress> {
         let compress = &self.yaml["compress"];
-        setting_value!(compress);
+        check_value!(compress);
 
         // compress: true
         if compress.as_bool().is_some() {
@@ -677,7 +676,7 @@ impl Parser {
     }
 
     fn try_(&self) -> Setting<Vec<Var<String>>> {
-        setting_value!(self.yaml["try"]);
+        check_value!(self.yaml["try"]);
 
         let vec = self
             .yaml
@@ -691,19 +690,19 @@ impl Parser {
 
     fn methods(&self, set_default: bool) -> Setting<Vec<Method>> {
         let method = &self.yaml["method"];
-        setting_off!(method);
+        check_off!(method);
 
         if set_default {
-            setting_none!(method, default::ALLOW_METHODS.to_vec());
+            check_none!(method, default::ALLOW_METHODS.to_vec());
         } else {
-            setting_none!(method);
+            check_none!(method);
         }
 
         let methods = self
             .yaml
             .key_to_multiple_string("method")
             .iter()
-            .map(|m| m.as_str().to_method())
+            .map(|s| transform::to_method(s))
             .collect();
 
         Setting::Value(methods)
@@ -711,7 +710,7 @@ impl Parser {
 
     fn auth(&self) -> Setting<Auth> {
         let auth = &self.yaml["auth"];
-        setting_value!(auth);
+        check_value!(auth);
 
         self.yaml
             .check("auth", &["user", "password"], &["user", "password"]);
@@ -742,7 +741,7 @@ impl Parser {
     }
 
     fn error_page(&self, status: usize, root: &Option<PathBuf>) -> Setting<PathBuf> {
-        setting_value!(self.yaml[status]);
+        check_value!(self.yaml[status]);
 
         let s = self.yaml[status].to_string(status);
         let p = PathBuf::from(&s);
@@ -757,18 +756,18 @@ impl Parser {
 
     fn proxy(&self) -> Setting<Proxy> {
         let proxy = &self.yaml["proxy"];
-        setting_value!(proxy);
+        check_value!(proxy);
 
         self.yaml
             .check("proxy", &["url", "method", "header"], &["url"]);
 
         let url_str = proxy.key_to_string("url");
-        let url = Var::from(url_str).map_none(|s| s.as_str().to_url());
+        let url = Var::from(url_str).map_none(transform::to_url);
 
         let method = if proxy["method"].is_badvalue() {
             None
         } else {
-            let method = proxy.key_to_string("method").as_str().to_method();
+            let method = transform::to_method(proxy.key_to_string("method"));
             Some(method)
         };
 
@@ -783,7 +782,7 @@ impl Parser {
 
     async fn log<P: AsRef<Path>>(&self, root: P) -> Setting<Logger> {
         let log = &self.yaml["log"];
-        setting_value!(log);
+        check_value!(log);
 
         if let Some(path) = log.try_to_string() {
             let logger = Logger::new(default::LOG_FORMAT.to_string())
@@ -821,7 +820,7 @@ impl Parser {
 
     fn ip(&self) -> Setting<IpMatcher> {
         let ip = &self.yaml["ip"];
-        setting_value!(ip);
+        check_value!(ip);
 
         self.yaml.check("ip", &["allow", "deny"], &[]);
 

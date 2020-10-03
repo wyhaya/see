@@ -1,4 +1,4 @@
-use crate::config::Force;
+use crate::config::transform;
 use crate::matcher::{replace_match_keyword, WildcardMatcher, ANY_WORD, REGEX_WORD};
 use regex::Regex;
 
@@ -30,7 +30,7 @@ impl HostMatcher {
         for item in items {
             // Use regex: ~^example\.com$
             if let Some(raw) = replace_match_keyword(&item, REGEX_WORD) {
-                let reg = raw.as_str().to_regex();
+                let reg = transform::to_regex(raw);
                 modes.push(MatchMode::Regex(reg));
                 continue;
             }

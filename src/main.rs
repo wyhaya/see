@@ -13,7 +13,7 @@ use ace::App;
 use compress::BodyStream;
 use config::Headers;
 use config::{
-    default, mime, AbsolutePath, Force, RewriteStatus, ServerConfig, Setting, SiteConfig,
+    default, mime, transform, AbsolutePath, RewriteStatus, ServerConfig, Setting, SiteConfig,
 };
 use futures_util::future::join_all;
 use hyper::header::{
@@ -61,12 +61,10 @@ async fn async_main() {
                         if values.len() != 1 {
                             exit!("-b value: [ADDRESS]");
                         }
-                        values[0].clone()
+                        transform::to_socket_addr(values[0])
                     }
-                    None => default::START_PORT.to_string(),
-                }
-                .as_str()
-                .to_socket_addr();
+                    None => default::bind_addr(),
+                };
 
                 let path = match app.value("-p") {
                     Some(values) => {

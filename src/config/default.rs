@@ -42,7 +42,9 @@ pub const LOG_FORMAT: &str = "${method} ${header_host}${path}${query} ${header_u
 
 // Quick start
 
-pub const START_PORT: u16 = 80;
+pub fn bind_addr() -> SocketAddr {
+    "0.0.0.0:80".parse::<SocketAddr>().unwrap()
+}
 
 pub fn quick_start_config(root: PathBuf, listen: SocketAddr) -> ServerConfig {
     let mut site = SiteConfig::default();

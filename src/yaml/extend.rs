@@ -22,7 +22,7 @@ impl YamlExtend for Yaml {
         for (key, _) in hash {
             let key = key.to_string(format!("{} 'key'", name));
             if !keys.contains(&key.as_str()) {
-                exit!("Check failed, unknown directive `{}` in '{}'", key, name)
+                exit!("Unknown directive `{}` in '{}'", key, name)
             }
         }
 

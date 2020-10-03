@@ -1,4 +1,4 @@
-use crate::config::Force;
+use crate::config::transform;
 use crate::matcher::{replace_match_keyword, END_WORD, REGEX_WORD, START_WORD};
 use globset::GlobMatcher;
 use regex::Regex;
@@ -19,7 +19,7 @@ impl LocationMatcher {
     pub fn new(location: &str) -> Self {
         // Regex
         if let Some(raw) = replace_match_keyword(location, REGEX_WORD) {
-            let reg = raw.as_str().to_regex();
+            let reg = transform::to_regex(raw);
             return LocationMatcher(MatchMode::Regex(reg));
         }
 
@@ -34,7 +34,7 @@ impl LocationMatcher {
         }
 
         // Glob
-        let glob = location.to_glob().compile_matcher();
+        let glob = transform::to_glob(location);
         LocationMatcher(MatchMode::Glob(glob))
     }
 
