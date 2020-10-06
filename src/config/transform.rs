@@ -1,9 +1,10 @@
 use crate::exit;
+use crate::util::try_to_socket_addr;
 use globset::{Glob, GlobMatcher};
 use hyper::header::{HeaderName, HeaderValue};
-use hyper::{Method, Uri};
+use hyper::{Method, StatusCode, Uri};
 use regex::Regex;
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::net::{IpAddr, SocketAddr};
 use std::str::FromStr;
 
 // Force conversion of string to specified type
@@ -32,6 +33,11 @@ pub fn to_header_value<S: AsRef<str>>(s: S) -> HeaderValue {
 pub fn to_method<S: AsRef<str>>(s: S) -> Method {
     Method::from_str(s.as_ref())
         .unwrap_or_else(|err| exit!("Cannot parse `{}` to http method\n{}", s.as_ref(), err))
+}
+
+pub fn to_status_code<S: AsRef<str>>(s: S) -> StatusCode {
+    StatusCode::from_str(s.as_ref())
+        .unwrap_or_else(|err| exit!("Cannot parse `{}` to http status\n{}", s.as_ref(), err))
 }
 
 pub fn to_regex<S: AsRef<str>>(s: S) -> Regex {
@@ -64,42 +70,4 @@ pub fn to_url<S: AsRef<str>>(s: S) -> Uri {
     s.as_ref()
         .parse::<Uri>()
         .unwrap_or_else(|err| exit!("Cannot parse `{}` to http url\n{}", s.as_ref(), err))
-}
-
-fn try_to_socket_addr(text: &str) -> Result<SocketAddr, ()> {
-    // 0.0.0.0:80
-    if let Ok(addr) = text.parse::<SocketAddr>() {
-        return Ok(addr);
-    }
-    // 0.0.0.0
-    if let Ok(ip) = text.parse::<Ipv4Addr>() {
-        if let Ok(addr) = format!("{}:80", ip).parse::<SocketAddr>() {
-            return Ok(addr);
-        }
-    }
-    // 80
-    if let Ok(port) = text.parse::<u16>() {
-        if let Ok(addr) = format!("0.0.0.0:{}", port).parse::<SocketAddr>() {
-            return Ok(addr);
-        }
-    }
-
-    Err(())
-}
-
-#[test]
-fn test_try_to_socket_addr() {
-    assert_eq!(
-        try_to_socket_addr("80").unwrap(),
-        "0.0.0.0:80".parse::<SocketAddr>().unwrap()
-    );
-    assert_eq!(
-        try_to_socket_addr("0.0.0.0").unwrap(),
-        "0.0.0.0:80".parse::<SocketAddr>().unwrap()
-    );
-    assert_eq!(
-        try_to_socket_addr("0.0.0.0:80").unwrap(),
-        "0.0.0.0:80".parse::<SocketAddr>().unwrap()
-    );
-    assert_eq!(try_to_socket_addr("err"), Err(()));
 }

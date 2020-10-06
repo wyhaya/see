@@ -1,5 +1,5 @@
-use crate::*;
-use compress::{CompressLevel, CompressMode};
+use super::{CompressLevel, CompressMode};
+use crate::exit;
 
 #[derive(Debug, Clone, Copy)]
 pub enum Encoding {

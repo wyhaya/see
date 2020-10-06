@@ -1,5 +1,6 @@
 use std::env;
-use std::path::PathBuf;
+use std::net::{Ipv4Addr, SocketAddr};
+use std::path::{Path, PathBuf};
 use tokio::fs;
 
 // Encountered a fatal error
@@ -38,4 +39,58 @@ pub async fn is_file(path: &PathBuf) -> bool {
         .await
         .map(|meta| meta.is_file())
         .unwrap_or(false)
+}
+
+pub fn try_to_socket_addr(text: &str) -> Result<SocketAddr, ()> {
+    // 0.0.0.0:80
+    if let Ok(addr) = text.parse::<SocketAddr>() {
+        return Ok(addr);
+    }
+    // 0.0.0.0
+    if let Ok(ip) = text.parse::<Ipv4Addr>() {
+        if let Ok(addr) = format!("{}:80", ip).parse::<SocketAddr>() {
+            return Ok(addr);
+        }
+    }
+    // 80
+    if let Ok(port) = text.parse::<u16>() {
+        if let Ok(addr) = format!("0.0.0.0:{}", port).parse::<SocketAddr>() {
+            return Ok(addr);
+        }
+    }
+
+    Err(())
+}
+
+#[test]
+fn test_try_to_socket_addr() {
+    assert_eq!(
+        try_to_socket_addr("80").unwrap(),
+        "0.0.0.0:80".parse::<SocketAddr>().unwrap()
+    );
+    assert_eq!(
+        try_to_socket_addr("0.0.0.0").unwrap(),
+        "0.0.0.0:80".parse::<SocketAddr>().unwrap()
+    );
+    assert_eq!(
+        try_to_socket_addr("0.0.0.0:80").unwrap(),
+        "0.0.0.0:80".parse::<SocketAddr>().unwrap()
+    );
+    assert_eq!(try_to_socket_addr("err"), Err(()));
+}
+
+// Convert path to absolute path
+pub trait AbsolutePath {
+    fn absolute_path<P: AsRef<Path>>(&self, root: P) -> PathBuf;
+}
+
+impl AbsolutePath for String {
+    fn absolute_path<P: AsRef<Path>>(&self, root: P) -> PathBuf {
+        let path = PathBuf::from(self);
+        if path.is_absolute() {
+            path
+        } else {
+            root.as_ref().join(self)
+        }
+    }
 }

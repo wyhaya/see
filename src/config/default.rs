@@ -1,8 +1,8 @@
 use crate::compress::CompressLevel;
-use crate::directory::Directory;
+use crate::option::{Directory, Method};
 use crate::util::home_dir;
 use crate::{ServerConfig, Setting, SiteConfig};
-use hyper::Method;
+use hyper::Method as HttpMethod;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -23,7 +23,7 @@ pub fn config_path() -> PathBuf {
 
 pub const AUTH_MESSAGE: &str = "Basic realm=\"User Visible Realm\"";
 
-pub const ALLOW_METHODS: [Method; 2] = [Method::GET, Method::HEAD];
+pub const ALLOW_METHODS: [HttpMethod; 2] = [HttpMethod::GET, HttpMethod::HEAD];
 
 pub const COMPRESS_LEVEL: CompressLevel = CompressLevel::Default;
 
@@ -53,7 +53,7 @@ pub fn quick_start_config(root: PathBuf, listen: SocketAddr) -> ServerConfig {
         time: Some(DIRECTORY_TIME_FORMAT.to_string()),
         size: true,
     });
-    site.methods = Setting::Value(ALLOW_METHODS.to_vec());
+    site.method = Setting::Value(Method::new(ALLOW_METHODS.to_vec()));
 
     ServerConfig {
         listen,

@@ -1,33 +1,28 @@
 mod client;
 mod compress;
 mod config;
-mod directory;
-mod logger;
 mod matcher;
+mod option;
 mod server;
 mod util;
-mod var;
 mod yaml;
 
 use ace::App;
 use compress::BodyStream;
-use config::Headers;
-use config::{
-    default, mime, transform, AbsolutePath, RewriteStatus, ServerConfig, Setting, SiteConfig,
-};
+use config::{default, mime, transform, Headers, ServerConfig, Setting, SiteConfig, Var};
 use futures_util::future::join_all;
 use hyper::header::{
-    HeaderName, HeaderValue, ACCEPT_ENCODING, ALLOW, CONTENT_ENCODING, CONTENT_LENGTH,
-    CONTENT_TYPE, HOST, LOCATION, SERVER, WWW_AUTHENTICATE,
+    HeaderName, HeaderValue, ACCEPT_ENCODING, CONTENT_ENCODING, CONTENT_LENGTH, CONTENT_TYPE, HOST,
+    LOCATION, SERVER,
 };
 use hyper::Result as HyperResult;
-use hyper::{Body, HeaderMap, Method, Request, Response, StatusCode, Uri, Version};
+use hyper::{Body, HeaderMap, Request, Response, StatusCode, Version};
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 use tokio::fs::{self, File};
 use tokio::net::TcpListener;
 use tokio::runtime;
-use var::Var;
+use util::{current_dir, get_extension, is_file, AbsolutePath};
 
 fn main() {
     let mut runtime = runtime::Builder::new()
@@ -71,9 +66,9 @@ async fn async_main() {
                         if values.len() != 1 {
                             exit!("-p value: [DIR]");
                         }
-                        values[0].absolute_path(util::current_dir())
+                        values[0].absolute_path(current_dir())
                     }
-                    None => util::current_dir(),
+                    None => current_dir(),
                 };
 
                 let config = default::quick_start_config(path.clone(), addr);
@@ -236,38 +231,22 @@ async fn handle(
 
     // HTTP auth
     if let Setting::Value(auth) = &config.auth {
-        if !auth.check(&req) {
-            return StatusResponse::new(StatusCode::UNAUTHORIZED)
-                .header(
-                    WWW_AUTHENTICATE,
-                    HeaderValue::from_static(default::AUTH_MESSAGE),
-                )
-                .into();
+        if let Some(res) = auth.response(&req) {
+            return res;
         }
     }
 
     // Proxy request
     if config.proxy.is_value() {
-        return response_proxy(req, &config).await;
+        let proxy = config.proxy.into_value();
+        config.proxy = Setting::None;
+        return proxy.request(req, &config).await;
     }
 
     // Not allowed request method
-    if let Setting::Value(methods) = &config.methods {
-        if !methods.contains(req.method()) {
-            // Show allowed methods in header
-            if req.method() == Method::OPTIONS {
-                let allow = methods
-                    .iter()
-                    .map(|m| m.as_str())
-                    .collect::<Vec<&str>>()
-                    .join(", ");
-
-                return StatusResponse::new(StatusCode::METHOD_NOT_ALLOWED)
-                    .header(ALLOW, HeaderValue::from_str(&allow).unwrap())
-                    .into();
-            } else {
-                return StatusResponse::from_status(StatusCode::METHOD_NOT_ALLOWED);
-            }
+    if let Setting::Value(method) = &config.method {
+        if let Some(res) = method.response(&req) {
+            return res;
         }
     }
 
@@ -280,21 +259,7 @@ async fn handle(
 
     // rewrite
     if config.rewrite.is_value() {
-        let rewrite = config.rewrite.into_value();
-
-        let value = rewrite.location.map(|s, r| {
-            let result = r.replace(s, &req);
-            HeaderValue::from_str(&result).unwrap()
-        });
-
-        let status = match rewrite.status {
-            RewriteStatus::_301 => StatusCode::MOVED_PERMANENTLY,
-            RewriteStatus::_302 => StatusCode::FOUND,
-        };
-
-        return Response::new(Body::empty())
-            .set_status(status)
-            .set_header(LOCATION, value);
+        return config.rewrite.into_value().response(&req);
     }
 
     let cur_path = format!(".{}", req_path);
@@ -328,7 +293,7 @@ async fn handle(
                     return response_file(
                         StatusCode::OK,
                         file,
-                        util::get_extension(&path),
+                        get_extension(&path),
                         req.headers().get(ACCEPT_ENCODING),
                         &config,
                     )
@@ -416,7 +381,7 @@ async fn handle(
     }
 }
 
-fn headers_merge(headers: &mut HeaderMap, new_headers: Headers, req: &Request<Body>) {
+pub fn headers_merge(headers: &mut HeaderMap, new_headers: Headers, req: &Request<Body>) {
     for (name, value) in new_headers {
         let val = value.map(|s, r| {
             let v = r.replace(s, &req);
@@ -426,56 +391,20 @@ fn headers_merge(headers: &mut HeaderMap, new_headers: Headers, req: &Request<Bo
     }
 }
 
-async fn response_proxy(mut req: Request<Body>, config: &SiteConfig) -> Response<Body> {
-    let c = config.proxy.clone().into_value();
-    let encoding = req.headers().get(ACCEPT_ENCODING).cloned();
-
-    let url = c.url.map(|s, r| {
-        let result = r.replace(s, &req);
-        result.parse::<Uri>().unwrap()
-    });
-
-    *req.uri_mut() = url;
-    if let Some(method) = c.method {
-        *req.method_mut() = method;
-    }
-    if let Setting::Value(headers) = c.headers {
-        let mut h = req.headers().clone();
-        headers_merge(&mut h, headers, &req);
-        *req.headers_mut() = h;
-    }
-
-    match client::request(req).await {
-        Ok(res) => res,
-        Err(err) => {
-            let status = if err.is_timeout() {
-                StatusCode::GATEWAY_TIMEOUT
-            } else {
-                StatusCode::BAD_GATEWAY
-            };
-            response_error_page(encoding.as_ref(), &config, status).await
-        }
-    }
-}
-
-async fn response_error_page(
+pub async fn response_error_page(
     encoding: Option<&HeaderValue>,
     config: &SiteConfig,
     status: StatusCode,
 ) -> Response<Body> {
-    let path = match status {
-        StatusCode::FORBIDDEN => &config.error._403,
-        StatusCode::NOT_FOUND => &config.error._404,
-        StatusCode::BAD_GATEWAY => &config.error._502,
-        StatusCode::GATEWAY_TIMEOUT => &config.error._504,
-        _ => &config.error._500,
-    };
-
-    if let Setting::Value(path) = path {
-        if util::is_file(path).await {
-            if let Ok(f) = File::open(&path).await {
-                return response_file(status, f, util::get_extension(&path), encoding, &config)
-                    .await;
+    if let Setting::Value(pages) = &config.error {
+        if let Some(setting) = pages.get(&status) {
+            if let Setting::Value(path) = setting {
+                if is_file(path).await {
+                    if let Ok(f) = File::open(&path).await {
+                        return response_file(status, f, get_extension(&path), encoding, &config)
+                            .await;
+                    }
+                }
             }
         }
     }
@@ -486,7 +415,7 @@ async fn response_error_page(
 async fn response_html(html: String, req: &Request<Body>, config: &SiteConfig) -> Response<Body> {
     let encoding = match &config.compress {
         Setting::Value(compress) => match req.headers().get(ACCEPT_ENCODING) {
-            Some(header) => compress.get_html_compress_mode(&header),
+            Some(header) => compress.get_compress_mode(&header, "html"),
             None => None,
         },
         _ => None,

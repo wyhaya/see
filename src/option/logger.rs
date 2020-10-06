@@ -1,10 +1,9 @@
-use crate::var::Var;
+use crate::config::Var;
 use hyper::{Body, Request};
 use std::path::Path;
 use std::sync::Arc;
 use tokio::fs::{File, OpenOptions};
-use tokio::io::*;
-use tokio::io::{self, Result};
+use tokio::io::{self, AsyncWriteExt, Result, Stdout};
 use tokio::sync::Mutex;
 
 #[derive(Clone, Debug)]
