@@ -20,11 +20,11 @@ A simple and fast web server
 
 ## Install
 
-### Binary
+#### Binary
 
 [Download](https://github.com/wyhaya/see/releases) the binary from the release page
 
-### Cargo
+#### Cargo
 
 ```bash
 cargo install see
@@ -32,7 +32,7 @@ cargo install see
 cargo install --git https://github.com/wyhaya/see
 ```
 
-### Docker
+#### Docker
 
 ```bash
 docker pull wyhaya/see
@@ -75,7 +75,7 @@ see start
 Use specified port and directory
 
 ```bash
-see start -b 0.0.0.0:80 -p /root/www
+see start -b 80 -p /root/www
 ```
 
 ## Config
