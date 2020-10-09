@@ -1,5 +1,4 @@
 pub mod default;
-pub mod mime;
 pub mod tls;
 pub mod transform;
 

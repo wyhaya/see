@@ -2,6 +2,7 @@ mod client;
 mod compress;
 mod config;
 mod matcher;
+mod mime;
 mod option;
 mod server;
 mod util;
@@ -9,7 +10,7 @@ mod yaml;
 
 use ace::App;
 use compress::BodyStream;
-use config::{default, mime, transform, Headers, ServerConfig, Setting, SiteConfig, Var};
+use config::{default, transform, Headers, ServerConfig, Setting, SiteConfig, Var};
 use futures_util::future::join_all;
 use hyper::header::{
     HeaderName, HeaderValue, ACCEPT_ENCODING, CONTENT_ENCODING, CONTENT_LENGTH, CONTENT_TYPE, HOST,
@@ -253,8 +254,7 @@ async fn handle(
     // echo: Output plain text
     if config.echo.is_value() {
         let echo = config.echo.into_value().map(|s, r| r.replace(s, &req));
-        return Response::new(Body::from(echo))
-            .set_header(CONTENT_TYPE, HeaderValue::from_static(mime::TEXT_PLAIN));
+        return Response::new(Body::from(echo)).set_header(CONTENT_TYPE, mime::text_plain());
     }
 
     // rewrite
@@ -427,7 +427,7 @@ async fn response_html(html: String, req: &Request<Body>, config: &SiteConfig) -
     let body = BodyStream::new(encoding).text(html);
 
     Response::new(body)
-        .set_header(CONTENT_TYPE, HeaderValue::from_static(mime::TEXT_HTML))
+        .set_header(CONTENT_TYPE, mime::text_html())
         .set_header(header.0, header.1)
 }
 
@@ -461,10 +461,7 @@ async fn response_file(
 
     Response::new(body)
         .set_status(status)
-        .set_header(
-            CONTENT_TYPE,
-            HeaderValue::from_static(mime::from_extension(ext.unwrap_or_default())),
-        )
+        .set_header(CONTENT_TYPE, mime::from_extension(ext.unwrap_or_default()))
         .set_header(header.0, header.1)
 }
 
@@ -490,8 +487,7 @@ impl StatusResponse {
     }
 
     fn into(self) -> Response<Body> {
-        self.header(CONTENT_TYPE, HeaderValue::from_static(mime::TEXT_PLAIN))
-            .0
+        self.header(CONTENT_TYPE, mime::text_plain()).0
     }
 
     fn from_status(status: StatusCode) -> Response<Body> {
