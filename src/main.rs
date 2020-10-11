@@ -181,11 +181,11 @@ pub async fn connect(
         Ok(opt) => match opt {
             Some(config) => config,
             None => {
-                return Ok(StatusResponse::from_status(StatusCode::FORBIDDEN));
+                return Ok(Response::error(StatusCode::FORBIDDEN));
             }
         },
         Err(_) => {
-            return Ok(StatusResponse::from_status(StatusCode::BAD_REQUEST));
+            return Ok(Response::error(StatusCode::BAD_REQUEST));
         }
     };
 
@@ -226,7 +226,7 @@ async fn handle(
     // IP allow and deny
     if let Setting::Value(matcher) = &config.ip {
         if !matcher.is_pass(ip) {
-            return StatusResponse::from_status(StatusCode::FORBIDDEN);
+            return Response::error(StatusCode::FORBIDDEN);
         }
     }
 
@@ -254,7 +254,7 @@ async fn handle(
     // echo: Output plain text
     if config.echo.is_value() {
         let echo = config.echo.into_value().map(|s, r| r.replace(s, &req));
-        return Response::new(Body::from(echo)).set_header(CONTENT_TYPE, mime::text_plain());
+        return Response::new(Body::from(echo)).header(CONTENT_TYPE, mime::text_plain());
     }
 
     // rewrite
@@ -317,8 +317,8 @@ async fn handle(
             };
 
             return Response::new(Body::empty())
-                .set_status(StatusCode::MOVED_PERMANENTLY)
-                .set_header(LOCATION, HeaderValue::from_str(&location).unwrap());
+                .status(StatusCode::MOVED_PERMANENTLY)
+                .header(LOCATION, HeaderValue::from_str(&location).unwrap());
         }
 
         FileRoute::Directory => {
@@ -409,7 +409,7 @@ pub async fn response_error_page(
         }
     }
 
-    StatusResponse::from_status(status)
+    Response::error(status)
 }
 
 async fn response_html(html: String, req: &Request<Body>, config: &SiteConfig) -> Response<Body> {
@@ -420,15 +420,15 @@ async fn response_html(html: String, req: &Request<Body>, config: &SiteConfig) -
         },
         _ => None,
     };
-    let header = match encoding {
+    let (k, v) = match encoding {
         Some(encoding) => (CONTENT_ENCODING, encoding.to_header_value()),
         None => (CONTENT_LENGTH, HeaderValue::from(html.len())),
     };
     let body = BodyStream::new(encoding).text(html);
 
     Response::new(body)
-        .set_header(CONTENT_TYPE, mime::text_html())
-        .set_header(header.0, header.1)
+        .header(CONTENT_TYPE, mime::text_html())
+        .header(k, v)
 }
 
 async fn response_file(
@@ -460,53 +460,34 @@ async fn response_file(
     let body = BodyStream::new(encoding).file(file);
 
     Response::new(body)
-        .set_status(status)
-        .set_header(CONTENT_TYPE, mime::from_extension(ext.unwrap_or_default()))
-        .set_header(header.0, header.1)
+        .status(status)
+        .header(CONTENT_TYPE, mime::from_extension(ext.unwrap_or_default()))
+        .header(header.0, header.1)
 }
 
 async fn try_files(_: &PathBuf, _: &Vec<Var<String>>, _: &Request<Body>) -> Option<(File, String)> {
     todo!();
 }
 
-// Response content is the StatusCode
-struct StatusResponse(Response<Body>);
-
-impl StatusResponse {
-    fn new(status: StatusCode) -> Self {
-        let body = Body::from(status.to_string());
-        let mut res = Response::new(body);
-        *res.status_mut() = status;
-
-        Self(res)
-    }
-
-    fn header(mut self, key: HeaderName, val: HeaderValue) -> Self {
-        self.0.headers_mut().insert(key, val);
-        self
-    }
-
-    fn into(self) -> Response<Body> {
-        self.header(CONTENT_TYPE, mime::text_plain()).0
-    }
-
-    fn from_status(status: StatusCode) -> Response<Body> {
-        Self::new(status).into()
-    }
+trait ResponseExtend<Body> {
+    fn error(status: StatusCode) -> Self;
+    fn status(self, status: StatusCode) -> Self;
+    fn header(self, key: HeaderName, val: HeaderValue) -> Self;
 }
 
-trait ResponseExtend {
-    fn set_status(self, status: StatusCode) -> Self;
-    fn set_header(self, key: HeaderName, val: HeaderValue) -> Self;
-}
+impl ResponseExtend<Body> for Response<Body> {
+    fn error(status: StatusCode) -> Self {
+        Response::new(Body::from(status.to_string()))
+            .status(status)
+            .header(CONTENT_TYPE, mime::text_plain())
+    }
 
-impl ResponseExtend for Response<Body> {
-    fn set_status(mut self, status: StatusCode) -> Self {
+    fn status(mut self, status: StatusCode) -> Self {
         *self.status_mut() = status;
         self
     }
 
-    fn set_header(mut self, key: HeaderName, val: HeaderValue) -> Self {
+    fn header(mut self, key: HeaderName, val: HeaderValue) -> Self {
         self.headers_mut().insert(key, val);
         self
     }

@@ -22,8 +22,8 @@ impl Rewrite {
         };
 
         return Response::new(Body::empty())
-            .set_status(status)
-            .set_header(LOCATION, value);
+            .status(status)
+            .header(LOCATION, value);
     }
 }
 

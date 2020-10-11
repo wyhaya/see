@@ -1,5 +1,5 @@
 use crate::default;
-use crate::StatusResponse;
+use crate::ResponseExtend;
 use hyper::header::{HeaderValue, AUTHORIZATION, WWW_AUTHENTICATE};
 use hyper::{Body, Request, Response, StatusCode};
 
@@ -20,13 +20,10 @@ impl Auth {
             .unwrap_or(false);
 
         if !check {
-            let res = StatusResponse::new(StatusCode::UNAUTHORIZED)
-                .header(
-                    WWW_AUTHENTICATE,
-                    HeaderValue::from_static(default::AUTH_MESSAGE),
-                )
-                .into();
-            return Some(res);
+            return Some(Response::error(StatusCode::UNAUTHORIZED).header(
+                WWW_AUTHENTICATE,
+                HeaderValue::from_static(default::AUTH_MESSAGE),
+            ));
         }
 
         None

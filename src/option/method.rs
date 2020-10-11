@@ -1,4 +1,4 @@
-use crate::StatusResponse;
+use crate::ResponseExtend;
 use hyper::header::{HeaderValue, ALLOW};
 use hyper::{Body, Method as HttpMethod, Request, Response, StatusCode};
 
@@ -24,13 +24,12 @@ impl Method {
                     .join(", ");
 
                 return Some(
-                    StatusResponse::new(StatusCode::METHOD_NOT_ALLOWED)
-                        .header(ALLOW, HeaderValue::from_str(&allow).unwrap())
-                        .into(),
+                    Response::error(StatusCode::METHOD_NOT_ALLOWED)
+                        .header(ALLOW, HeaderValue::from_str(&allow).unwrap()),
                 );
             }
 
-            return Some(StatusResponse::from_status(StatusCode::METHOD_NOT_ALLOWED));
+            return Some(Response::error(StatusCode::METHOD_NOT_ALLOWED));
         }
 
         None
