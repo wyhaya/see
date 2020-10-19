@@ -12,5 +12,5 @@ FROM scratch
 EXPOSE 80 443
 WORKDIR /
 COPY --from=builder /root/target/x86_64-unknown-linux-musl/release/see .
-CMD ["./see", "-c", "config.yml"]
+CMD ["./see", "-c", "see.conf"]
 

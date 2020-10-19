@@ -24,7 +24,7 @@ impl Default for HostMatcher {
 }
 
 impl HostMatcher {
-    pub fn new(items: Vec<String>) -> HostMatcher {
+    pub fn new(items: Vec<&str>) -> HostMatcher {
         let mut modes = vec![];
 
         for item in items {
@@ -43,7 +43,7 @@ impl HostMatcher {
             }
 
             // Plain Text: example.com
-            modes.push(MatchMode::Text(item));
+            modes.push(MatchMode::Text(item.to_string()));
         }
 
         HostMatcher { modes }
@@ -102,7 +102,7 @@ mod test {
 
     macro_rules! host_matcher {
         ($host: expr) => {
-            HostMatcher::new(vec![$host.to_string()])
+            HostMatcher::new(vec![$host])
         };
     }
 

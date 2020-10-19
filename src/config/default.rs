@@ -16,7 +16,7 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 // Config file
 
 pub fn config_path() -> PathBuf {
-    home_dir().join(".see.yml")
+    home_dir().join(".see.conf")
 }
 
 // Server config

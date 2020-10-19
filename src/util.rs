@@ -80,17 +80,11 @@ fn test_try_to_socket_addr() {
 }
 
 // Convert path to absolute path
-pub trait AbsolutePath {
-    fn absolute_path<P: AsRef<Path>>(&self, root: P) -> PathBuf;
-}
-
-impl AbsolutePath for String {
-    fn absolute_path<P: AsRef<Path>>(&self, root: P) -> PathBuf {
-        let path = PathBuf::from(self);
-        if path.is_absolute() {
-            path
-        } else {
-            root.as_ref().join(self)
-        }
+pub fn absolute_path<P: AsRef<Path>, R: AsRef<Path>>(path: P, root: R) -> PathBuf {
+    let path = path.as_ref();
+    if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        root.as_ref().join(path)
     }
 }

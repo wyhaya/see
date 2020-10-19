@@ -7,7 +7,7 @@ use hyper::{Body, Request, Response, StatusCode};
 pub struct Auth(String);
 
 impl Auth {
-    pub fn basic(user: String, password: String) -> Self {
+    pub fn basic(user: &str, password: &str) -> Self {
         let s = format!("{}:{}", user, password);
         Self(format!("Basic {}", base64::encode(&s)))
     }

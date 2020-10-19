@@ -1,31 +1,51 @@
 #[macro_export]
 macro_rules! check_value {
-    ($yaml: expr) => {
-        check_none!($yaml);
-        check_off!($yaml);
+    ($block: expr, $key: expr) => {
+        check_none!($block, $key);
+        check_off!($block, $key);
     };
 }
 
 #[macro_export]
 macro_rules! check_none {
-    ($yaml: expr) => {
-        if $yaml.is_badvalue() || $yaml.is_null() {
-            return Setting::None;
+    ($block: expr, $key: expr) => {
+        match $block.get($key) {
+            Some(d) => {
+                if d.is_block() {
+                    if d.to_block().directives().is_empty() {
+                        return Setting::None;
+                    }
+                }
+            }
+            None => {
+                return Setting::None;
+            }
         }
     };
-    ($yaml: expr, $default: expr) => {
-        if $yaml.is_badvalue() || $yaml.is_null() {
-            return Setting::Value($default);
+    ($block: expr, $key: expr, $default: expr) => {
+        match $block.get($key) {
+            Some(d) => {
+                if d.is_block() {
+                    if d.to_block().directives().is_empty() {
+                        return Setting::Value($default);
+                    }
+                }
+            }
+            None => {
+                return Setting::Value($default);
+            }
         }
     };
 }
 
 #[macro_export]
 macro_rules! check_off {
-    ($yaml: expr) => {
-        if let Some(val) = $yaml.as_bool() {
-            if !val {
-                return Setting::Off;
+    ($block: expr, $key: expr) => {
+        if let Some(val) = $block.get($key) {
+            if let Some(b) = val.try_to_bool() {
+                if !b {
+                    return Setting::Off;
+                }
             }
         }
     };

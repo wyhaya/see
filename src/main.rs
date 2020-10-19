@@ -1,12 +1,12 @@
 mod client;
 mod compress;
+mod conf;
 mod config;
 mod matcher;
 mod mime;
 mod option;
 mod server;
 mod util;
-mod yaml;
 
 use ace::App;
 use compress::BodyStream;
@@ -23,7 +23,7 @@ use std::path::{Path, PathBuf};
 use tokio::fs::{self, File};
 use tokio::net::TcpListener;
 use tokio::runtime;
-use util::{current_dir, get_extension, is_file, AbsolutePath};
+use util::{absolute_path, current_dir, get_extension, is_file};
 
 fn main() {
     let mut runtime = runtime::Builder::new()
@@ -67,7 +67,7 @@ async fn async_main() {
                         if values.len() != 1 {
                             exit!("-p value: [DIR]");
                         }
-                        values[0].absolute_path(current_dir())
+                        absolute_path(values[0], current_dir())
                     }
                     None => current_dir(),
                 };

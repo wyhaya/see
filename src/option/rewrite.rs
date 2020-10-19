@@ -5,11 +5,18 @@ use hyper::{Body, Request, Response, StatusCode};
 
 #[derive(Debug, Clone)]
 pub struct Rewrite {
-    pub location: Var<HeaderValue>,
-    pub status: RewriteStatus,
+    location: Var<HeaderValue>,
+    status: RewriteStatus,
 }
 
 impl Rewrite {
+    pub fn new(location: &str, status: RewriteStatus) -> Self {
+        Self {
+            location: Var::from(location).map_none(transform::to_header_value),
+            status,
+        }
+    }
+
     pub fn response(self, req: &Request<Body>) -> Response<Body> {
         let value = self.location.map(|s, r| {
             let rst = r.replace(s, &req);
@@ -24,21 +31,6 @@ impl Rewrite {
         return Response::new(Body::empty())
             .status(status)
             .header(LOCATION, value);
-    }
-}
-
-impl From<String> for Rewrite {
-    fn from(s: String) -> Self {
-        let mut split = s.split_whitespace();
-
-        let location = split
-            .next()
-            .map(|s| Var::from(s).map_none(transform::to_header_value))
-            .unwrap_or_else(|| exit!("Rewrite url cannot be empty"));
-
-        let status = split.next().map(RewriteStatus::from).unwrap_or_default();
-
-        Rewrite { location, status }
     }
 }
 

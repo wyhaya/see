@@ -28,12 +28,12 @@ impl CompressMode {
 }
 
 pub trait Level {
-    fn new(s: String) -> Self;
+    fn new(s: &str) -> Self;
 }
 
 impl Level for CompressLevel {
-    fn new(s: String) -> Self {
-        match s.as_str() {
+    fn new(s: &str) -> Self {
+        match s {
             "fast" => CompressLevel::Fastest,
             "default" => CompressLevel::Default,
             "best" => CompressLevel::Best,

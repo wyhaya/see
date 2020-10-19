@@ -14,17 +14,15 @@ enum MatchMode {
     Wildcard(WildcardMatcher),
 }
 
-impl From<&str> for MatchMode {
-    fn from(raw: &str) -> Self {
+impl MatchMode {
+    fn new(raw: &str) -> Self {
         if raw.contains(ANY_WORD) {
-            MatchMode::Wildcard(WildcardMatcher::new(raw))
+            Self::Wildcard(WildcardMatcher::new(raw))
         } else {
-            MatchMode::Ip(transform::to_ip_addr(raw))
+            Self::Ip(transform::to_ip_addr(raw))
         }
     }
-}
 
-impl MatchMode {
     fn is_match(&self, ip: &IpAddr) -> bool {
         match self {
             MatchMode::Ip(m) => m == ip,
@@ -34,16 +32,10 @@ impl MatchMode {
 }
 
 impl IpMatcher {
-    pub fn new(allow: Vec<String>, deny: Vec<String>) -> Self {
+    pub fn new(allow: Vec<&str>, deny: Vec<&str>) -> Self {
         Self {
-            allow: allow
-                .iter()
-                .map(|item| MatchMode::from(item.as_str()))
-                .collect(),
-            deny: deny
-                .iter()
-                .map(|item| MatchMode::from(item.as_str()))
-                .collect(),
+            allow: allow.iter().map(|s| MatchMode::new(s)).collect(),
+            deny: deny.iter().map(|s| MatchMode::new(s)).collect(),
         }
     }
 

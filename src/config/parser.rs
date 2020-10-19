@@ -1,543 +1,525 @@
 use super::{ErrorPage, Headers, Location, ServerConfig, SiteConfig};
-use crate::util::AbsolutePath;
-use crate::{check_none, check_off, check_value, compress, config, exit, matcher, option, yaml};
+use crate::conf::Block;
+use crate::util::absolute_path;
+use crate::{check_none, check_off, check_value, compress, config, exit, matcher, option};
 use compress::{CompressLevel, Encoding, Level};
 use config::tls::{create_sni_server_config, TLSContent};
 use config::{default, transform, Setting, Var};
 use matcher::{HostMatcher, IpMatcher, LocationMatcher};
-use option::{Auth, Compress, Directory, Index, Logger, Method, Proxy, Rewrite};
+use option::{Auth, Compress, Directory, Index, Logger, Method, Proxy, Rewrite, RewriteStatus};
 use std::collections::{BTreeSet, HashMap};
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
-use yaml::YamlExtend;
-use yaml_rust::Yaml;
 
-pub struct Parser {
-    yaml: Yaml,
-}
+pub async fn parse_server<P: AsRef<Path>>(block: &Block, config_dir: P) -> Vec<ServerConfig> {
+    block.check(&["server"], &["server"], &["server"]);
 
-impl Parser {
-    pub fn new(yaml: Yaml) -> Self {
-        Self { yaml }
-    }
+    let mut configs: Vec<ServerConfig> = vec![];
+    let mut tls_configs: Vec<(SocketAddr, Vec<TLSContent>)> = vec![];
+    for d in block.directives() {
+        let server = d.to_block();
+        server.check(
+            &[
+                "listen",
+                "https",
+                "host",
+                "root",
+                "echo",
+                "file",
+                "index",
+                "directory",
+                "header",
+                "rewrite",
+                "compress",
+                "method",
+                "auth",
+                "try",
+                "error",
+                "proxy",
+                "log",
+                "ip",
+                "location",
+            ],
+            &["listen"],
+            &["location"],
+        );
+        let listens = parse_listen(server);
+        let host = parse_host(server);
+        let https = parse_https(server, config_dir.as_ref(), host.get_raw());
 
-    pub async fn server<P: AsRef<Path>>(&self, config_dir: P) -> Vec<ServerConfig> {
-        let mut configs: Vec<ServerConfig> = vec![];
-        let mut tls_configs: Vec<(SocketAddr, Vec<TLSContent>)> = vec![];
-
-        for server in self.yaml.as_vec().unwrap() {
-            server.check(
-                "server",
-                &[
-                    "listen",
-                    "https",
-                    "host",
-                    "root",
-                    "echo",
-                    "file",
-                    "index",
-                    "directory",
-                    "header",
-                    "rewrite",
-                    "compress",
-                    "method",
-                    "auth",
-                    "try",
-                    "error",
-                    "proxy",
-                    "log",
-                    "ip",
-                    "buffer",
-                    "location",
-                ],
-                &["listen"],
-            );
-
-            let parser = Parser::new(server["server"].clone());
-            let listens = parser.listen();
-            let host = parser.host();
-
-            let https = parser.https(config_dir.as_ref(), host.get_raw());
-
-            if let Some(tls) = https {
-                for listen in &listens {
-                    let position = tls_configs.iter().position(|item| item.0 == *listen);
-                    match position {
-                        Some(i) => {
-                            tls_configs[i].1.push(tls.clone());
-                        }
-                        None => {
-                            tls_configs.push((*listen, vec![tls.clone()]));
-                        }
-                    }
-                }
-            }
-
-            let root = parser.root(config_dir.as_ref());
-
-            let site = SiteConfig {
-                host,
-                root: root.clone(),
-                echo: parser.echo(),
-                file: parser.file(&config_dir),
-                index: parser.index(true),
-                directory: parser.directory(),
-                headers: parser.headers(),
-                rewrite: parser.rewrite(),
-                compress: parser.compress(),
-                try_: parser.try_(),
-                method: parser.method(true),
-                error: parser.error(&root),
-                proxy: parser.proxy(),
-                log: parser.log(&config_dir).await,
-                ip: parser.ip(),
-                auth: parser.auth(),
-                location: parser.location(&config_dir, root).await,
-            };
-
-            for listen in listens {
-                let position = configs.iter().position(|item| item.listen == listen);
+        if let Some(tls) = https {
+            for listen in &listens {
+                let position = tls_configs.iter().position(|item| item.0 == *listen);
                 match position {
                     Some(i) => {
-                        configs[i].sites.push(site.clone());
+                        tls_configs[i].1.push(tls.clone());
                     }
-                    None => configs.push(ServerConfig {
-                        listen,
-                        tls: None,
-                        sites: vec![site.clone()],
-                    }),
+                    None => {
+                        tls_configs.push((*listen, vec![tls.clone()]));
+                    }
                 }
             }
         }
 
-        for (listen, group) in tls_configs {
-            let i = configs
-                .iter()
-                .position(|item| item.listen == listen)
-                .unwrap();
-            let t = create_sni_server_config(group);
-            configs[i].tls = Some(t);
-        }
+        let root = parse_root(server, config_dir.as_ref());
 
-        configs
+        let site = SiteConfig {
+            host,
+            root: root.clone(),
+            echo: parse_echo(server),
+            file: parse_file(server, &config_dir),
+            index: parse_index(server, true),
+            directory: parse_directory(server),
+            headers: parse_header(server),
+            rewrite: parse_rewrite(server),
+            compress: parse_compress(server),
+            try_: parse_try(server),
+            method: parse_method(server, true),
+            error: parse_error(server, &root),
+            proxy: parse_proxy(server),
+            log: parse_log(server, &config_dir).await,
+            ip: parse_ip(server),
+            auth: parse_auth(server),
+            location: parse_location(server, &config_dir, root).await,
+        };
+
+        for listen in listens {
+            let position = configs.iter().position(|item| item.listen == listen);
+            match position {
+                Some(i) => {
+                    configs[i].sites.push(site.clone());
+                }
+                None => configs.push(ServerConfig {
+                    listen,
+                    tls: None,
+                    sites: vec![site.clone()],
+                }),
+            }
+        }
     }
 
-    async fn location<P: AsRef<Path>>(
-        &self,
-        config_dir: P,
-        parent_root: Option<PathBuf>,
-    ) -> Vec<Location> {
-        if self.yaml["location"].is_badvalue() {
-            return vec![];
-        }
-
-        let hash = self.yaml["location"].to_hash();
-        let mut vec = vec![];
-
-        for (key, server) in hash.iter() {
-            let route = key.to_string();
-
-            self.yaml["location"].check(
-                &route,
-                &[
-                    "break",
-                    "root",
-                    "echo",
-                    "file",
-                    "index",
-                    "directory",
-                    "header",
-                    "rewrite",
-                    "compress",
-                    "method",
-                    "auth",
-                    "try",
-                    "error",
-                    "proxy",
-                    "log",
-                    "ip",
-                ],
-                &[],
-            );
-
-            let parser = Parser::new(server.clone());
-
-            let root = match parser.root(config_dir.as_ref()) {
-                Some(p) => Some(p),
-                None => parent_root.clone(),
-            };
-
-            vec.push(Location {
-                location: LocationMatcher::new(route.as_str()),
-                break_: parser.break_(),
-                root: root.clone(),
-                echo: parser.echo(),
-                file: parser.file(&config_dir),
-                index: parser.index(false),
-                directory: parser.directory(),
-                headers: parser.headers(),
-                rewrite: parser.rewrite(),
-                compress: parser.compress(),
-                method: parser.method(false),
-                auth: parser.auth(),
-                try_: parser.try_(),
-                error: parser.error(&root),
-                proxy: parser.proxy(),
-                log: parser.log(&config_dir).await,
-                ip: parser.ip(),
-            });
-        }
-        vec
-    }
-
-    fn listen(&self) -> Vec<SocketAddr> {
-        self.yaml["listen"]
-            .to_multiple_string()
+    for (listen, group) in tls_configs {
+        let i = configs
             .iter()
-            .map(transform::to_socket_addr)
-            .collect::<BTreeSet<SocketAddr>>()
-            .into_iter()
-            .collect()
+            .position(|item| item.listen == listen)
+            .unwrap();
+        let t = create_sni_server_config(group);
+        configs[i].tls = Some(t);
     }
 
-    fn https(&self, config_dir: &Path, hostname: Vec<&String>) -> Option<TLSContent> {
-        let https = &self.yaml["https"];
-        if https.is_badvalue() {
-            return None;
-        }
+    configs
+}
 
-        self.yaml.check("https", &["cert", "key"], &["cert", "key"]);
+async fn parse_location<P: AsRef<Path>>(
+    block: &Block,
+    config_dir: P,
+    parent_root: Option<PathBuf>,
+) -> Vec<Location> {
+    if block.get("location").is_none() {
+        return vec![];
+    }
+    let root = match parse_root(&block, config_dir.as_ref()) {
+        Some(p) => Some(p),
+        None => parent_root.clone(),
+    };
+    let mut vec = vec![];
+    for d in block.get_all("location") {
+        let (route, location) = d.to_value_block();
+        location.check(
+            &[
+                "break",
+                "root",
+                "echo",
+                "file",
+                "index",
+                "directory",
+                "header",
+                "rewrite",
+                "compress",
+                "method",
+                "auth",
+                "try",
+                "error",
+                "proxy",
+                "log",
+                "ip",
+            ],
+            &[],
+            &[],
+        );
 
-        let cert = https["cert"].to_string().absolute_path(config_dir);
-        let key = https["key"].to_string().absolute_path(config_dir);
-
-        if hostname.is_empty() {
-            exit!("Miss 'host'");
-        }
-
-        // todo
-        let sni = hostname[0].clone();
-
-        Some(TLSContent { cert, key, sni })
+        vec.push(Location {
+            location: LocationMatcher::new(route),
+            break_: parse_break(location),
+            root: root.clone(),
+            echo: parse_echo(location),
+            file: parse_file(location, &config_dir),
+            index: parse_index(location, false),
+            directory: parse_directory(location),
+            headers: parse_header(location),
+            rewrite: parse_rewrite(location),
+            compress: parse_compress(location),
+            method: parse_method(location, false),
+            auth: parse_auth(location),
+            try_: parse_try(location),
+            error: parse_error(location, &root),
+            proxy: parse_proxy(location),
+            log: parse_log(location, &config_dir).await,
+            ip: parse_ip(location),
+        });
     }
 
-    fn host(&self) -> HostMatcher {
-        let vec = self.yaml["host"].to_multiple_string();
-        HostMatcher::new(vec)
+    vec
+}
+
+fn parse_method(block: &Block, set_default: bool) -> Setting<Method> {
+    check_off!(block, "method");
+    if set_default {
+        check_none!(
+            block,
+            "method",
+            Method::new(default::ALLOW_METHODS.to_vec())
+        );
+    } else {
+        check_none!(block, "method");
+    }
+    let methods = block["method"]
+        .to_multiple_str()
+        .iter()
+        .map(|s| transform::to_method(s))
+        .collect();
+    Setting::Value(Method::new(methods))
+}
+
+fn parse_host(block: &Block) -> HostMatcher {
+    let vec = block
+        .get("host")
+        .map(|d| d.to_multiple_str())
+        .unwrap_or_default();
+    HostMatcher::new(vec)
+}
+
+// todo
+fn parse_try(block: &Block) -> Setting<Vec<Var<String>>> {
+    check_value!(block, "try");
+    let vec = block["try"]
+        .to_multiple_str()
+        .iter()
+        .map(|s| Var::from(s))
+        .collect::<Vec<Var<String>>>();
+
+    Setting::Value(vec)
+}
+
+fn parse_auth(block: &Block) -> Setting<Auth> {
+    check_value!(block, "auth");
+    let auth = block["auth"].to_block();
+    auth.check(&["user", "password"], &["user", "password"], &[]);
+    Setting::Value(Auth::basic(
+        auth["user"].to_source_str(),
+        auth["password"].to_source_str(),
+    ))
+}
+
+fn parse_break(block: &Block) -> bool {
+    block.get("break").map(|d| d.to_bool()).unwrap_or_default()
+}
+
+fn parse_echo(block: &Block) -> Setting<Var<String>> {
+    check_value!(block, "echo");
+    Setting::Value(Var::from(block["echo"].to_source_str()))
+}
+
+fn parse_file<P: AsRef<Path>>(block: &Block, root: P) -> Setting<PathBuf> {
+    check_value!(block, "file");
+    let buf = absolute_path(block["file"].to_source_str(), root);
+    Setting::Value(buf)
+}
+
+fn parse_rewrite(block: &Block) -> Setting<Rewrite> {
+    check_value!(block, "rewrite");
+
+    if block["rewrite"].is_string() {
+        return Setting::Value(Rewrite::new(
+            block["rewrite"].to_str(),
+            RewriteStatus::default(),
+        ));
     }
 
-    fn root(&self, config_dir: &Path) -> Option<PathBuf> {
-        if self.yaml["root"].is_badvalue() {
-            return None;
-        }
+    let rewrite = block["rewrite"].to_block();
+    rewrite.check(&["location", "status"], &["location"], &[]);
 
-        let path = self.yaml["root"].to_string().absolute_path(config_dir);
-        Some(path)
+    let status = rewrite
+        .get("status")
+        .map(|d| RewriteStatus::from(d.to_str()))
+        .unwrap_or_default();
+
+    Setting::Value(Rewrite::new(rewrite["location"].to_str(), status))
+}
+
+fn parse_ip(block: &Block) -> Setting<IpMatcher> {
+    check_value!(block, "ip");
+
+    let ip = block["ip"].to_block();
+    ip.check(&["allow", "deny"], &[], &[]);
+
+    let allow = ip
+        .get("allow")
+        .map(|d| d.to_multiple_str())
+        .unwrap_or_default();
+
+    let deny = ip
+        .get("deny")
+        .map(|d| d.to_multiple_str())
+        .unwrap_or_default();
+
+    Setting::Value(IpMatcher::new(allow, deny))
+}
+
+fn parse_root<P: AsRef<Path>>(block: &Block, config_dir: P) -> Option<PathBuf> {
+    if block.get("root").is_none() {
+        return None;
+    }
+    let path = absolute_path(block["root"].to_str(), config_dir);
+    Some(path)
+}
+
+fn parse_index(block: &Block, set_default: bool) -> Setting<Index> {
+    check_off!(block, "index");
+    if set_default {
+        check_none!(
+            block,
+            "index",
+            Index::new(default::INDEX.iter().map(|i| (*i).to_string()).collect())
+        );
+    } else {
+        check_none!(block, "index");
+    }
+    let indexs = block["index"]
+        .to_multiple_str()
+        .into_iter()
+        .map(|s| s.to_string())
+        .collect();
+    Setting::Value(Index::new(indexs))
+}
+
+fn parse_listen(block: &Block) -> Vec<SocketAddr> {
+    block["listen"]
+        .to_multiple_str()
+        .iter()
+        .map(transform::to_socket_addr)
+        .collect::<BTreeSet<SocketAddr>>()
+        .into_iter()
+        .collect()
+}
+
+fn parse_header(block: &Block) -> Setting<Headers> {
+    check_value!(block, "header");
+    let header = block["header"].to_block().directives();
+    let mut map = HashMap::new();
+    for d in header {
+        let key = d.key().to_string();
+        let val = d.to_str();
+        let header_name = transform::to_header_name(&key);
+        let value = Var::from(val);
+        let header_value = value.map_none(transform::to_header_value);
+
+        map.insert(header_name, header_value);
     }
 
-    fn echo(&self) -> Setting<Var<String>> {
-        check_value!(self.yaml["echo"]);
+    Setting::Value(map)
+}
 
-        let var = Var::from(self.yaml["echo"].to_string());
-        Setting::Value(var)
+fn parse_directory(block: &Block) -> Setting<Directory> {
+    check_value!(block, "directory");
+
+    // directory on
+    if block["directory"].is_bool() {
+        return Setting::Value(Directory {
+            time: None,
+            size: false,
+        });
     }
 
-    fn file<P: AsRef<Path>>(&self, root: P) -> Setting<PathBuf> {
-        check_value!(self.yaml["file"]);
+    let directory = block["directory"].to_block();
+    directory.check(&["time", "size"], &[], &[]);
 
-        let path = self.yaml["file"].to_string().absolute_path(root);
-        Setting::Value(path)
-    }
-
-    fn index(&self, set_default: bool) -> Setting<Index> {
-        let index = &self.yaml["index"];
-        check_off!(index);
-
-        if set_default {
-            check_none!(
-                index,
-                Index::new(default::INDEX.iter().map(|i| (*i).to_string()).collect())
-            );
-        } else {
-            check_none!(index);
-        }
-
-        let vec = self.yaml["index"].to_multiple_string();
-        Setting::Value(Index::new(vec))
-    }
-
-    fn directory(&self) -> Setting<Directory> {
-        let directory = &self.yaml["directory"];
-        check_value!(directory);
-
-        // directory: true
-        if directory.as_bool().is_some() {
-            return Setting::Value(Directory {
-                time: None,
-                size: false,
-            });
-        }
-
-        self.yaml.check("directory", &["time", "size"], &[]);
-
-        let time = if directory["time"].is_badvalue() {
-            None
-        } else {
-            match directory["time"].as_bool() {
-                Some(b) => {
-                    if b {
-                        Some(default::DIRECTORY_TIME_FORMAT.to_string())
-                    } else {
-                        None
-                    }
+    let time = match directory.get("time") {
+        Some(d) => {
+            if let Some(b) = d.try_to_bool() {
+                if b {
+                    Some(default::DIRECTORY_TIME_FORMAT.to_string())
+                } else {
+                    None
                 }
-                None => {
-                    let format = directory["time"].to_string();
-                    // check
-                    let _ = transform::to_strftime(&format);
-                    Some(format)
-                }
+            } else {
+                // check
+                let _ = transform::to_strftime(d.to_str());
+                Some(d.to_str().to_string())
             }
-        };
-
-        let size = if directory["size"].is_badvalue() {
-            false
-        } else {
-            directory["size"].to_bool()
-        };
-
-        Setting::Value(Directory { time, size })
-    }
-
-    fn headers(&self) -> Setting<Headers> {
-        check_value!(self.yaml["header"]);
-
-        let hash = self.yaml["header"].to_hash();
-        let mut map = HashMap::new();
-
-        for (key, value) in hash {
-            let key = key.to_string();
-            let header_name = transform::to_header_name(&key);
-
-            let value = Var::from(value.to_string());
-            let header_value = value.map_none(transform::to_header_value);
-
-            map.insert(header_name, header_value);
         }
+        None => None,
+    };
 
-        Setting::Value(map)
-    }
+    let size = directory
+        .get("size")
+        .map(|d| d.to_bool())
+        .unwrap_or_default();
 
-    fn rewrite(&self) -> Setting<Rewrite> {
-        check_value!(self.yaml["rewrite"]);
-        let value = self.yaml["rewrite"].to_string();
+    Setting::Value(Directory { time, size })
+}
 
-        Setting::Value(Rewrite::from(value))
-    }
+fn parse_proxy(block: &Block) -> Setting<Proxy> {
+    check_value!(block, "proxy");
+    let proxy = block["proxy"].to_block();
+    proxy.check(&["url", "method", "header"], &["url"], &[]);
 
-    fn compress(&self) -> Setting<Compress> {
-        let compress = &self.yaml["compress"];
-        check_value!(compress);
+    let url_str = proxy["url"].to_str();
+    let url = Var::from(url_str).map_none(transform::to_url);
 
-        // compress: true
-        if compress.as_bool().is_some() {
-            return Setting::Value(Compress {
-                modes: vec![Encoding::Auto(default::COMPRESS_LEVEL)],
-                extensions: default::COMPRESS_EXTENSIONS
-                    .iter()
-                    .map(|e| (*e).to_string())
-                    .collect(),
-            });
-        }
+    let method = proxy
+        .get("method")
+        .map(|d| transform::to_method(d.to_str()));
 
-        self.yaml
-            .check("compress", &["mode", "level", "extension"], &[]);
+    Setting::Value(Proxy {
+        url,
+        method,
+        headers: parse_header(proxy),
+    })
+}
 
-        let level = if compress["level"].is_badvalue() {
-            default::COMPRESS_LEVEL
-        } else {
-            CompressLevel::new(compress["level"].to_string())
-        };
+fn parse_compress(block: &Block) -> Setting<Compress> {
+    check_value!(block, "compress");
 
-        let modes = if compress["mode"].is_badvalue() {
-            vec![Encoding::Auto(level)]
-        } else {
-            let mode = compress["mode"].to_multiple_string();
-            mode.iter().map(|mode| Encoding::new(mode, level)).collect()
-        };
-
-        let extensions = if compress["extension"].is_badvalue() {
-            default::COMPRESS_EXTENSIONS
+    // compress on
+    if block["compress"].is_bool() {
+        return Setting::Value(Compress {
+            modes: vec![Encoding::Auto(default::COMPRESS_LEVEL)],
+            extensions: default::COMPRESS_EXTENSIONS
                 .iter()
                 .map(|e| (*e).to_string())
-                .collect()
-        } else {
-            compress["extension"].to_multiple_string()
-        };
-
-        Setting::Value(Compress { modes, extensions })
+                .collect(),
+        });
     }
 
-    fn try_(&self) -> Setting<Vec<Var<String>>> {
-        check_value!(self.yaml["try"]);
+    let compress = block["compress"].to_block();
+    compress.check(&["mode", "level", "extension"], &[], &[]);
 
-        let vec = self.yaml["try"]
-            .to_multiple_string()
-            .iter()
-            .map(|s| Var::from(s))
-            .collect::<Vec<Var<String>>>();
+    let level = match compress.get("level") {
+        Some(d) => CompressLevel::new(d.to_str()),
+        None => default::COMPRESS_LEVEL,
+    };
 
-        Setting::Value(vec)
-    }
-
-    fn method(&self, set_default: bool) -> Setting<Method> {
-        let method = &self.yaml["method"];
-        check_off!(method);
-
-        if set_default {
-            check_none!(method, Method::new(default::ALLOW_METHODS.to_vec()));
-        } else {
-            check_none!(method);
+    let modes = match compress.get("mode") {
+        Some(d) => {
+            let mode = d.to_multiple_str();
+            mode.iter().map(|mode| Encoding::new(mode, level)).collect()
         }
+        None => vec![Encoding::Auto(level)],
+    };
 
-        let methods = self.yaml["method"]
-            .to_multiple_string()
+    let extensions = match compress.get("extension") {
+        Some(d) => d
+            .to_multiple_str()
             .iter()
-            .map(|s| transform::to_method(s))
-            .collect();
+            .map(|e| (*e).to_string())
+            .collect(),
+        None => default::COMPRESS_EXTENSIONS
+            .iter()
+            .map(|e| (*e).to_string())
+            .collect(),
+    };
 
-        Setting::Value(Method::new(methods))
+    Setting::Value(Compress { modes, extensions })
+}
+
+// todo
+fn parse_https(block: &Block, config_dir: &Path, hostname: Vec<&String>) -> Option<TLSContent> {
+    if block.get("https").is_none() {
+        return None;
+    }
+    let https = block["https"].to_block();
+    https.check(&["cert", "key"], &["cert", "key"], &[]);
+
+    let cert = absolute_path(https["cert"].to_str(), config_dir);
+    let key = absolute_path(https["key"].to_str(), config_dir);
+
+    if hostname.is_empty() {
+        exit!("Missing 'host'");
     }
 
-    fn auth(&self) -> Setting<Auth> {
-        let auth = &self.yaml["auth"];
-        check_value!(auth);
+    Some(TLSContent {
+        cert,
+        key,
+        sni: hostname[0].clone(),
+    })
+}
 
-        self.yaml
-            .check("auth", &["user", "password"], &["user", "password"]);
+async fn parse_log<P: AsRef<Path>>(block: &Block, root: P) -> Setting<Logger> {
+    check_value!(block, "log");
 
-        Setting::Value(Auth::basic(
-            auth["user"].to_string(),
-            auth["password"].to_string(),
-        ))
+    if block["log"].is_string() {
+        let path = absolute_path(block["log"].to_str(), root);
+        let logger = Logger::new(default::LOG_FORMAT.to_string())
+            .file(path)
+            .await
+            .unwrap_or_else(|err| exit!("Init logger failed:\n{:?}", err));
+
+        return Setting::Value(logger);
     }
 
-    fn error(&self, root: &Option<PathBuf>) -> ErrorPage {
-        let error = &self.yaml["error"];
-        check_value!(error);
+    let log = block["log"].to_block();
+    log.check(&["mode", "file", "format"], &["mode"], &[]);
 
-        let mut pages = HashMap::new();
+    let format_ = match log.get("format") {
+        Some(d) => d.to_str(),
+        None => default::LOG_FORMAT,
+    };
 
-        for (key, val) in self.yaml["error"].to_hash() {
-            let key = key.to_string();
-            let status = transform::to_status_code(&key);
-            let val = Self::get_error_value(&val);
-            match val {
-                Setting::Value(s) => {
-                    let p = PathBuf::from(&s);
-                    if p.is_absolute() {
-                        pages.insert(status, Setting::Value(p));
-                    } else {
-                        let root = root.clone().unwrap_or_else(|| exit!("Miss root option"));
-                        pages.insert(status, Setting::Value(s.absolute_path(&root)));
-                    }
-                }
-                Setting::Off => {
-                    pages.insert(status, Setting::Off);
-                }
-                Setting::None => break,
-            }
-        }
-
-        Setting::Value(pages)
-    }
-
-    fn get_error_value(yaml: &Yaml) -> Setting<String> {
-        check_value!(yaml);
-        Setting::Value(yaml.to_string())
-    }
-
-    fn proxy(&self) -> Setting<Proxy> {
-        let proxy = &self.yaml["proxy"];
-        check_value!(proxy);
-
-        self.yaml
-            .check("proxy", &["url", "method", "header"], &["url"]);
-
-        let url_str = proxy["url"].to_string();
-        let url = Var::from(url_str).map_none(transform::to_url);
-
-        let method = if proxy["method"].is_badvalue() {
-            None
-        } else {
-            let method = transform::to_method(proxy["method"].to_string());
-            Some(method)
-        };
-
-        let headers = Parser::new(proxy.clone()).headers();
-
-        Setting::Value(Proxy {
-            url,
-            method,
-            headers,
-        })
-    }
-
-    async fn log<P: AsRef<Path>>(&self, root: P) -> Setting<Logger> {
-        let log = &self.yaml["log"];
-        check_value!(log);
-
-        if let Some(path) = log.try_to_string() {
-            let logger = Logger::new(default::LOG_FORMAT.to_string())
-                .file(path.absolute_path(root))
+    let mode = log["mode"].to_str();
+    match mode {
+        "stdout" => Setting::Value(Logger::new(format_).stdout()),
+        "file" => {
+            let path = absolute_path(log["file"].to_str(), root);
+            let logger = Logger::new(format_)
+                .file(path)
                 .await
                 .unwrap_or_else(|err| exit!("Init logger failed:\n{:?}", err));
 
-            return Setting::Value(logger);
+            Setting::Value(logger)
         }
+        _ => exit!("Wrong log mode `{}`, optional value: `stdout` `file`", mode),
+    }
+}
 
-        self.yaml.check("log", &["mode", "file", "format"], &[]);
-
-        let format_ = if log["format"].is_badvalue() {
-            default::LOG_FORMAT.to_string()
-        } else {
-            log["format"].to_string()
-        };
-
-        let mode = log["mode"].to_string();
-
-        match mode.as_ref() {
-            "stdout" => Setting::Value(Logger::new(format_).stdout()),
-            "file" => {
-                let path = log["file"].to_string();
-                let logger = Logger::new(format_)
-                    .file(path.absolute_path(root))
-                    .await
-                    .unwrap_or_else(|err| exit!("Init logger failed:\n{:?}", err));
-
-                Setting::Value(logger)
+fn parse_error(block: &Block, root: &Option<PathBuf>) -> ErrorPage {
+    check_value!(block, "error");
+    let error = block["error"].to_block();
+    let mut pages = HashMap::new();
+    for d in error.directives() {
+        let status = transform::to_status_code(d.key());
+        let val = parse_error_value(&block, d.key());
+        match val {
+            Setting::Value(s) => {
+                let p = PathBuf::from(&s);
+                if p.is_absolute() {
+                    pages.insert(status, Setting::Value(p));
+                } else {
+                    let root = root.clone().unwrap_or_else(|| exit!("Missing root option"));
+                    pages.insert(status, Setting::Value(absolute_path(s, root)));
+                }
             }
-            _ => exit!("Wrong log mode `{}`, optional value: `stdout` `file`", mode),
+            Setting::Off => {
+                pages.insert(status, Setting::Off);
+            }
+            Setting::None => {}
         }
     }
 
-    fn ip(&self) -> Setting<IpMatcher> {
-        let ip = &self.yaml["ip"];
-        check_value!(ip);
+    Setting::Value(pages)
+}
 
-        self.yaml.check("ip", &["allow", "deny"], &[]);
-
-        Setting::Value(IpMatcher::new(
-            ip["allow"].to_multiple_string(),
-            ip["deny"].to_multiple_string(),
-        ))
-    }
-
-    fn break_(&self) -> bool {
-        if self.yaml["break"].is_badvalue() {
-            return false;
-        }
-
-        self.yaml["break"].to_bool()
-    }
+fn parse_error_value(block: &Block, status: &str) -> Setting<String> {
+    check_value!(block, status);
+    Setting::Value(block[status].to_str().to_string())
 }

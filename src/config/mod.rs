@@ -9,18 +9,18 @@ mod var;
 pub use setting::*;
 pub use var::Var;
 
+use crate::conf::ConfParser;
 use crate::exit;
 use crate::matcher::{HostMatcher, IpMatcher, LocationMatcher};
 use crate::option::{Auth, Compress, Directory, Index, Logger, Method, Proxy, Rewrite};
 use hyper::header::{HeaderName, HeaderValue};
 use hyper::StatusCode;
-use parser::Parser;
+use parser::parse_server;
 use std::collections::HashMap;
 use std::fs;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use tokio_rustls::TlsAcceptor;
-use yaml_rust::YamlLoader;
 
 pub type Headers = HashMap<HeaderName, Var<HeaderValue>>;
 pub type ErrorPage = Setting<HashMap<StatusCode, Setting<PathBuf>>>;
@@ -83,14 +83,10 @@ impl ServerConfig {
         let content = fs::read_to_string(&path)
             .unwrap_or_else(|err| exit!("Read '{}' failed\n{:?}", path, err));
 
-        let docs = YamlLoader::load_from_str(&content)
+        let conf = ConfParser::parse(&content)
             .unwrap_or_else(|err| exit!("Parsing config file failed\n{:?}", err));
 
-        if docs.is_empty() {
-            exit!("Cannot parse `server` to array")
-        }
-
-        Parser::new(docs[0].clone()).server(config_dir).await
+        parse_server(&conf, config_dir).await
     }
 }
 
