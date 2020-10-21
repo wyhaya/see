@@ -1,5 +1,5 @@
 use super::{ErrorPage, Headers, Location, ServerConfig, SiteConfig};
-use crate::conf::Block;
+use crate::conf::{Block, BlockExt, DirectiveExt};
 use crate::util::absolute_path;
 use crate::{check_none, check_off, check_value, compress, config, exit, matcher, option};
 use compress::{CompressLevel, Encoding, Level};
@@ -318,9 +318,9 @@ fn parse_header(block: &Block) -> Setting<Headers> {
     let header = block["header"].to_block().directives();
     let mut map = HashMap::new();
     for d in header {
-        let key = d.key().to_string();
+        let name = d.name().to_string();
         let val = d.to_str();
-        let header_name = transform::to_header_name(&key);
+        let header_name = transform::to_header_name(&name);
         let value = Var::from(val);
         let header_value = value.map_none(transform::to_header_value);
 
@@ -334,7 +334,7 @@ fn parse_directory(block: &Block) -> Setting<Directory> {
     check_value!(block, "directory");
 
     // directory on
-    if block["directory"].is_bool() {
+    if block["directory"].is_on() {
         return Setting::Value(Directory {
             time: None,
             size: false,
@@ -346,7 +346,7 @@ fn parse_directory(block: &Block) -> Setting<Directory> {
 
     let time = match directory.get("time") {
         Some(d) => {
-            if let Some(b) = d.try_to_bool() {
+            if let Some(b) = d.as_bool() {
                 if b {
                     Some(default::DIRECTORY_TIME_FORMAT.to_string())
                 } else {
@@ -392,7 +392,7 @@ fn parse_compress(block: &Block) -> Setting<Compress> {
     check_value!(block, "compress");
 
     // compress on
-    if block["compress"].is_bool() {
+    if block["compress"].is_on() {
         return Setting::Value(Compress {
             modes: vec![Encoding::Auto(default::COMPRESS_LEVEL)],
             extensions: default::COMPRESS_EXTENSIONS
@@ -497,8 +497,8 @@ fn parse_error(block: &Block, root: &Option<PathBuf>) -> ErrorPage {
     let error = block["error"].to_block();
     let mut pages = HashMap::new();
     for d in error.directives() {
-        let status = transform::to_status_code(d.key());
-        let val = parse_error_value(&block, d.key());
+        let status = transform::to_status_code(d.name());
+        let val = parse_error_value(&block, d.name());
         match val {
             Setting::Value(s) => {
                 let p = PathBuf::from(&s);

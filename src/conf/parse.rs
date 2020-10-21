@@ -1,7 +1,9 @@
-use crate::exit;
 use lazy_static::lazy_static;
 use regex::Regex;
+use std::fmt::{self, Display, Formatter};
+use std::iter::Enumerate;
 use std::ops::Index;
+use std::str::{FromStr, Lines};
 
 // A block containing multiple directive
 // {
@@ -21,287 +23,297 @@ impl Block {
         }
     }
 
-    fn push(&mut self, key: String, value: Value, line: usize) {
-        self.directives.push(Directive { line, key, value });
+    fn push(&mut self, name: String, value: Value, line: usize) {
+        self.directives.push(Directive { line, name, value });
     }
 
-    // Check within the current block
-    // If the check fails, the process will exit
-    pub fn check(&self, allow: &[&str], required: &[&str], repeat: &[&str]) {
-        // Allowed values
-        for directive in &self.directives {
-            if !allow.contains(&directive.key.as_str()) {
-                exit!(
-                    "[line: {}] Unknown directive `{}`",
-                    directive.line,
-                    directive.key
-                )
-            }
-        }
-
-        // Required values
-        for key in required {
-            if self.get(key).is_none() {
-                exit!("[line: {}] Missing directive `{}`", self.line, key)
-            }
-        }
-
-        // Repeated values
-        for directive in &self.directives {
-            if !repeat.contains(&directive.key()) {
-                let all = self.get_all(directive.key());
-                if all.len() > 1 {
-                    let re = all[all.len() - 1];
-                    exit!("[line: {}] Repeated directive `{}`", re.line, re.key)
-                }
-            }
-        }
+    // Get the line number of the block
+    pub fn line(&self) -> usize {
+        self.line
     }
 
     // Get directive based on key
-    pub fn get(&self, key: &str) -> Option<&Directive> {
-        self.directives.iter().find(|item| item.key == key)
+    pub fn get(&self, name: &str) -> Option<&Directive> {
+        self.directives.iter().find(|item| item.name == name)
     }
 
-    // Get all directive with a specific key
-    pub fn get_all(&self, key: &str) -> Vec<&Directive> {
+    // Get all directive with a specific name
+    pub fn get_all(&self, name: &str) -> Vec<&Directive> {
         self.directives
             .iter()
-            .filter(|item| key == item.key)
+            .filter(|item| item.name == name)
             .collect::<Vec<&Directive>>()
     }
 
+    // Get all directives
     pub fn directives(&self) -> &Vec<Directive> {
         &self.directives
     }
 }
 
+// Parsing the 'str' to block
+impl FromStr for Block {
+    type Err = ParseError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut lines = LineParse::new(s);
+        parse(&mut lines, 0, None)
+    }
+}
+
 impl Index<&str> for Block {
     type Output = Directive;
-    fn index(&self, index: &str) -> &Self::Output {
-        self.get(index).unwrap()
+    fn index(&self, name: &str) -> &Self::Output {
+        self.get(name).expect(&format!("'{}' doesn't exist", name))
     }
 }
 
 #[derive(Debug)]
 pub struct Directive {
     line: usize,
-    key: String,
+    name: String,
     value: Value,
 }
 
+#[derive(Debug)]
+pub enum Value {
+    // name
+    None,
+    // name value
+    String(String),
+    // name on | name off
+    Boolean(bool),
+    // name { ... }
+    Block(Block),
+    // name value { ... }
+    ValueBlock(String, Block),
+}
+
 impl Directive {
-    pub fn key(&self) -> &str {
-        &self.key
+    // Get the name of the directive
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    // Get the line number of the directive
+    pub fn line(&self) -> usize {
+        self.line
     }
 
     pub fn is_string(&self) -> bool {
         matches!(self.value, Value::String(_))
     }
 
-    pub fn is_bool(&self) -> bool {
-        matches!(self.value, Value::Boolean(_))
+    pub fn is_on(&self) -> bool {
+        match self.value {
+            Value::Boolean(val) => val,
+            _ => false,
+        }
+    }
+
+    pub fn is_off(&self) -> bool {
+        match self.value {
+            Value::Boolean(val) => !val,
+            _ => false,
+        }
     }
 
     pub fn is_block(&self) -> bool {
         matches!(self.value, Value::Block(_))
     }
 
-    pub fn to_str(&self) -> &str {
-        let val = self.to_source_str();
-        if val.split_whitespace().count() != 1 {
-            exit!(
-                "[line: {}] Directive `{}` does not allow multiple values",
-                self.line,
-                self.key
-            )
-        }
-        val
-    }
-
-    pub fn to_source_str(&self) -> &str {
+    pub fn as_source_str(&self) -> Option<&str> {
         match &self.value {
-            Value::String(val) => val,
-            _ => exit!(
-                "[line: {}] Cannot convert `{}` to 'string'",
-                self.line,
-                self.key
-            ),
+            Value::String(val) => Some(val),
+            _ => None,
         }
     }
 
-    pub fn to_multiple_str(&self) -> Vec<&str> {
-        self.to_source_str()
-            .split_whitespace()
-            .collect::<Vec<&str>>()
+    pub fn as_bool(&self) -> Option<bool> {
+        match self.value {
+            Value::Boolean(val) => Some(val),
+            _ => None,
+        }
     }
 
-    pub fn to_bool(&self) -> bool {
+    pub fn as_block(&self) -> Option<&Block> {
         match &self.value {
-            Value::Boolean(val) => *val,
-            _ => exit!(
-                "[line: {}] Cannot convert `{}` to 'boolean'",
-                self.line,
-                self.key
-            ),
+            Value::Block(val) => Some(val),
+            _ => None,
         }
     }
 
-    pub fn to_block(&self) -> &Block {
+    pub fn as_value_block(&self) -> Option<(&str, &Block)> {
         match &self.value {
-            Value::Block(val) => val,
-            _ => exit!(
-                "[line: {}] Cannot convert `{}` to 'block'",
-                self.line,
-                self.key,
-            ),
-        }
-    }
-
-    pub fn to_value_block(&self) -> (&str, &Block) {
-        match &self.value {
-            Value::ValueBlock(val, block) => (val, block),
-            _ => exit!(
-                "[line: {}] Cannot convert `{}` to 'value block'",
-                self.line,
-                self.key
-            ),
-        }
-    }
-
-    pub fn try_to_bool(&self) -> Option<bool> {
-        if self.is_bool() {
-            Some(self.to_bool())
-        } else {
-            None
+            Value::ValueBlock(val, block) => Some((val, block)),
+            _ => None,
         }
     }
 }
 
-#[derive(Debug)]
-enum Value {
-    // key value
-    String(String),
-    // key on | off
-    Boolean(bool),
-    // key { ... }
-    Block(Block),
-    // key value { ... }
-    ValueBlock(String, Block),
+struct LineParse<'a> {
+    iter: Enumerate<Lines<'a>>,
+}
+
+impl<'a> Iterator for LineParse<'a> {
+    type Item = (usize, Line);
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.next().map(|(n, s)| (n + 1, Self::parse_line(s)))
+    }
 }
 
 #[derive(Debug)]
-pub struct ParseError(usize, ErrorType);
-
-#[derive(Debug)]
-enum ErrorType {
+enum Line {
+    Invalid,
+    Error(Error),
+    Name(String),
+    NameValue(String, String),
+    NameBlock(String),
+    NameValueBlock(String, String),
     BlockEnd,
-    Error,
 }
 
-pub struct ConfParser;
-impl ConfParser {
-    pub fn parse(content: &str) -> Result<Block, ParseError> {
-        let mut lines = content.lines().enumerate();
-        parse(&mut lines, 0)
+lazy_static! {
+    static ref COMMENT_REGEX: Regex = Regex::new("#.*$").unwrap();
+    static ref KV_REGEX: Regex = Regex::new(r"^(?P<name>[^\s]+)\s+(?P<value>.+)$").unwrap();
+}
+
+impl<'a> LineParse<'a> {
+    fn new(content: &'a str) -> Self {
+        Self {
+            iter: content.lines().enumerate(),
+        }
+    }
+
+    fn parse_line(line: &str) -> Line {
+        // Remove comment and space
+        let line = COMMENT_REGEX.replace(line, "");
+        let line = line.trim();
+        if line.is_empty() {
+            return Line::Invalid;
+        }
+
+        // name value? {
+        if line.ends_with('{') {
+            let mut line = line.to_string();
+            line.pop();
+            match line.split_whitespace().count() {
+                // name {
+                1 => {
+                    return Line::NameBlock(line.trim_end().to_string());
+                }
+                // name value {
+                2 => {
+                    let mut sp = line.split_whitespace();
+                    let name = sp.next().unwrap().to_string();
+                    let value = sp.next().unwrap().to_string();
+                    return Line::NameValueBlock(name, value);
+                }
+                len => {
+                    if len == 0 {
+                        return Line::Error(Error::BlockStart);
+                    } else {
+                        return Line::Error(Error::ValueLength);
+                    }
+                }
+            };
+        }
+
+        if line.starts_with('}') || line.ends_with('}') {
+            // Closing brackets must be on a separate line
+            if line != "}" {
+                return Line::Error(Error::BlockEnd);
+            } else {
+                return Line::BlockEnd;
+            }
+        }
+
+        // Only name
+        if line.split_whitespace().count() == 1 {
+            return Line::Name(line.to_string());
+        }
+
+        // name ... ...
+        let cap = KV_REGEX.captures(line).unwrap();
+        let name = cap.name("name").unwrap().as_str().to_string();
+        let value = cap.name("value").unwrap().as_str().to_string();
+        Line::NameValue(name, value)
     }
 }
 
-fn parse<'a, I: Iterator<Item = (usize, &'a str)>>(
+fn parse<I: Iterator<Item = (usize, Line)>>(
     iter: &mut I,
     index: usize,
+    in_block: Option<usize>,
 ) -> Result<Block, ParseError> {
     let mut block = Block::new(index);
-    let mut in_block = None;
 
-    while let Some((mut n, line)) = iter.next() {
-        n += 1;
-        // Skip invalid rows
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
-
-        // Block end
-        if line == "}" {
-            return Ok(block);
-        }
-
-        match Line::from(line) {
-            Line::KeyValue(key, value) => {
-                if value == "on" {
-                    block.push(key, Value::Boolean(true), n);
-                } else if value == "off" {
-                    block.push(key, Value::Boolean(false), n);
+    while let Some((n, line)) = iter.next() {
+        match line {
+            Line::Invalid => {
+                continue;
+            }
+            Line::Error(err) => {
+                return Err(ParseError(n, err));
+            }
+            Line::BlockEnd => {
+                return match in_block {
+                    Some(_) => Ok(block),
+                    None => Err(ParseError(n, Error::Redundant)),
+                };
+            }
+            Line::Name(name) => {
+                block.push(name, Value::None, n);
+            }
+            Line::NameValue(name, val) => {
+                if val == "on" {
+                    block.push(name, Value::Boolean(true), n);
+                } else if val == "off" {
+                    block.push(name, Value::Boolean(false), n);
                 } else {
-                    block.push(key, Value::String(value.to_string()), n);
+                    block.push(name, Value::String(val), n);
                 }
             }
-            Line::KeyBlock(key) => {
-                in_block = Some(n);
-                let child = parse(iter, n)?;
-                in_block = None;
-                block.push(key, Value::Block(child), n);
+            Line::NameBlock(name) => {
+                let child = parse(iter, n, Some(n))?;
+                block.push(name, Value::Block(child), n);
             }
-            Line::KeyValueBlock(key, value) => {
-                in_block = Some(n);
-                let child = parse(iter, n)?;
-                in_block = None;
-                block.push(key, Value::ValueBlock(value, child), n);
+            Line::NameValueBlock(name, val) => {
+                let child = parse(iter, n, Some(n))?;
+                block.push(name, Value::ValueBlock(val, child), n);
             }
-            Line::Error => return Err(ParseError(n, ErrorType::Error)),
         }
     }
 
     if let Some(n) = in_block {
-        return Err(ParseError(n, ErrorType::BlockEnd));
+        return Err(ParseError(n, Error::Lack));
     }
 
     Ok(block)
 }
 
 #[derive(Debug)]
-enum Line {
-    KeyValue(String, String),
-    KeyBlock(String),
-    KeyValueBlock(String, String),
-    Error,
+pub struct ParseError(usize, Error);
+
+#[derive(Debug)]
+enum Error {
+    BlockStart,
+    BlockEnd,
+    ValueLength,
+    Lack,
+    Redundant,
 }
 
-lazy_static! {
-    static ref COMMENT_REGEX: Regex = Regex::new("#.*$").unwrap();
-    static ref KV_REGEX: Regex = Regex::new(r"^(?P<key>[^\s]+)\s+(?P<value>.+)$").unwrap();
-}
-
-impl From<&str> for Line {
-    fn from(line: &str) -> Self {
-        // Remove comment
-        let line = COMMENT_REGEX.replace(line, "");
-        let line = line.trim();
-
-        if line.ends_with('{') {
-            // Block
-            let mut s = line.to_string();
-            s.pop();
-            let sp = s.split_whitespace();
-            let count = sp.count();
-            if count == 1 {
-                let mut sp = s.split_whitespace();
-                let key = sp.next().unwrap();
-                return Line::KeyBlock(key.to_string());
+impl Display for ParseError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let msg = match self.1 {
+            Error::BlockStart => "'{' can only appear at the end of a line",
+            Error::BlockEnd => "'}' Must be on a separate line",
+            Error::ValueLength => {
+                "The length of the value is wrong\nTry: 'name {' or 'name value {'"
             }
-            if count == 2 {
-                let mut sp = s.split_whitespace();
-                let key = sp.next().unwrap();
-                let value = sp.next().unwrap();
-                return Line::KeyValueBlock(key.to_string(), value.to_string());
-            }
-            Line::Error
-        } else {
-            let cap = KV_REGEX.captures(line).unwrap();
-            let key = cap.name("key").unwrap().as_str().to_string();
-            let value = cap.name("value").unwrap().as_str().to_string();
-            Line::KeyValue(key, value)
-        }
+            Error::Lack => "Missing '}'",
+            Error::Redundant => "Redundant '}'",
+        };
+        write!(f, "[line: {}] {}", self.0, msg)
     }
 }

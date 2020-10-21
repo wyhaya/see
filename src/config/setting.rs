@@ -42,10 +42,8 @@ macro_rules! check_none {
 macro_rules! check_off {
     ($block: expr, $key: expr) => {
         if let Some(val) = $block.get($key) {
-            if let Some(b) = val.try_to_bool() {
-                if !b {
-                    return Setting::Off;
-                }
+            if val.is_off() {
+                return Setting::Off;
             }
         }
     };

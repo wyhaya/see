@@ -9,7 +9,7 @@ mod var;
 pub use setting::*;
 pub use var::Var;
 
-use crate::conf::ConfParser;
+use crate::conf::Block;
 use crate::exit;
 use crate::matcher::{HostMatcher, IpMatcher, LocationMatcher};
 use crate::option::{Auth, Compress, Directory, Index, Logger, Method, Proxy, Rewrite};
@@ -20,6 +20,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use tokio_rustls::TlsAcceptor;
 
 pub type Headers = HashMap<HeaderName, Var<HeaderValue>>;
@@ -83,8 +84,8 @@ impl ServerConfig {
         let content = fs::read_to_string(&path)
             .unwrap_or_else(|err| exit!("Read '{}' failed\n{:?}", path, err));
 
-        let conf = ConfParser::parse(&content)
-            .unwrap_or_else(|err| exit!("Parsing config file failed\n{:?}", err));
+        let conf = Block::from_str(&content)
+            .unwrap_or_else(|err| exit!("Parsing config file failed\n{}", err));
 
         parse_server(&conf, config_dir).await
     }
