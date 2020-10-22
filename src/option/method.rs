@@ -1,4 +1,4 @@
-use crate::ResponseExtend;
+use crate::ResponseExt;
 use hyper::header::{HeaderValue, ALLOW};
 use hyper::{Body, Method as HttpMethod, Request, Response, StatusCode};
 

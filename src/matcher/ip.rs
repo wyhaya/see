@@ -1,5 +1,5 @@
-use crate::config::transform;
 use crate::matcher::{WildcardMatcher, ANY_WORD};
+use crate::util;
 use std::net::IpAddr;
 
 #[derive(Debug, Clone)]
@@ -15,11 +15,11 @@ enum MatchMode {
 }
 
 impl MatchMode {
-    fn new(raw: &str) -> Self {
+    fn new(raw: &str) -> Result<Self, String> {
         if raw.contains(ANY_WORD) {
-            Self::Wildcard(WildcardMatcher::new(raw))
+            Ok(Self::Wildcard(WildcardMatcher::new(raw)))
         } else {
-            Self::Ip(transform::to_ip_addr(raw))
+            Ok(Self::Ip(util::to_ip_addr(raw)?))
         }
     }
 
@@ -32,11 +32,16 @@ impl MatchMode {
 }
 
 impl IpMatcher {
-    pub fn new(allow: Vec<&str>, deny: Vec<&str>) -> Self {
-        Self {
-            allow: allow.iter().map(|s| MatchMode::new(s)).collect(),
-            deny: deny.iter().map(|s| MatchMode::new(s)).collect(),
+    pub fn new(allow: Vec<&str>, deny: Vec<&str>) -> Result<Self, String> {
+        let mut a = vec![];
+        for item in allow {
+            a.push(MatchMode::new(item)?);
         }
+        let mut d = vec![];
+        for item in deny {
+            d.push(MatchMode::new(item)?);
+        }
+        Ok(Self { allow: a, deny: d })
     }
 
     pub fn is_pass(&self, ip: IpAddr) -> bool {

@@ -1,5 +1,5 @@
 use crate::default;
-use crate::ResponseExtend;
+use crate::ResponseExt;
 use hyper::header::{HeaderValue, AUTHORIZATION, WWW_AUTHENTICATE};
 use hyper::{Body, Request, Response, StatusCode};
 

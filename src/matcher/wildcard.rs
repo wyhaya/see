@@ -6,17 +6,14 @@ pub struct WildcardMatcher {
 }
 
 impl WildcardMatcher {
-    pub fn new(raw: &str) -> Self {
-        let mut chars = Vec::with_capacity(raw.len());
-        for ch in raw.chars() {
-            chars.push(ch);
+    pub fn new(s: &str) -> Self {
+        Self {
+            chars: s.chars().collect::<Vec<char>>(),
         }
-
-        Self { chars }
     }
 
-    pub fn is_match(&self, host: &str) -> bool {
-        let mut chars = host.chars();
+    pub fn is_match(&self, s: &str) -> bool {
+        let mut chars = s.chars();
         let mut dot = false;
 
         for ch in &self.chars {

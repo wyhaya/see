@@ -1,15 +1,30 @@
 use super::{ErrorPage, Headers, Location, ServerConfig, SiteConfig};
 use crate::conf::{Block, BlockExt, DirectiveExt};
-use crate::util::absolute_path;
+use crate::util::{self, absolute_path};
 use crate::{check_none, check_off, check_value, compress, config, exit, matcher, option};
-use compress::{CompressLevel, Encoding, Level};
+use compress::CompressMode;
 use config::tls::{create_sni_server_config, TLSContent};
-use config::{default, transform, Setting, Var};
+use config::{default, Setting, Var};
 use matcher::{HostMatcher, IpMatcher, LocationMatcher};
 use option::{Auth, Compress, Directory, Index, Logger, Method, Proxy, Rewrite, RewriteStatus};
 use std::collections::{BTreeSet, HashMap};
+use std::fmt::Display;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
+
+pub trait ParseResultExt<T> {
+    fn unwrap_exit(self, line: usize) -> T;
+}
+
+impl<T, E: Display> ParseResultExt<T> for Result<T, E> {
+    fn unwrap_exit(self, line: usize) -> T {
+        match self {
+            Ok(data) => data,
+            Err(err) => exit!("[line:{}] {}", line, err),
+        }
+    }
+}
 
 pub async fn parse_server<P: AsRef<Path>>(block: &Block, config_dir: P) -> Vec<ServerConfig> {
     block.check(&["server"], &["server"], &["server"]);
@@ -103,7 +118,8 @@ pub async fn parse_server<P: AsRef<Path>>(block: &Block, config_dir: P) -> Vec<S
             .iter()
             .position(|item| item.listen == listen)
             .unwrap();
-        let t = create_sni_server_config(group);
+        // todo
+        let t = create_sni_server_config(group).unwrap_exit(0);
         configs[i].tls = Some(t);
     }
 
@@ -149,7 +165,7 @@ async fn parse_location<P: AsRef<Path>>(
         );
 
         vec.push(Location {
-            location: LocationMatcher::new(route),
+            location: LocationMatcher::new(route).unwrap_exit(d.line()),
             break_: parse_break(location),
             root: root.clone(),
             echo: parse_echo(location),
@@ -186,17 +202,19 @@ fn parse_method(block: &Block, set_default: bool) -> Setting<Method> {
     let methods = block["method"]
         .to_multiple_str()
         .iter()
-        .map(|s| transform::to_method(s))
+        .map(|s| util::to_method(s).unwrap_exit(block["method"].line()))
         .collect();
     Setting::Value(Method::new(methods))
 }
 
+// todo
 fn parse_host(block: &Block) -> HostMatcher {
     let vec = block
         .get("host")
         .map(|d| d.to_multiple_str())
         .unwrap_or_default();
-    HostMatcher::new(vec)
+    let line = block.get("host").map(|d| d.line()).unwrap_or_default();
+    HostMatcher::new(vec).unwrap_exit(line)
 }
 
 // todo
@@ -240,10 +258,9 @@ fn parse_rewrite(block: &Block) -> Setting<Rewrite> {
     check_value!(block, "rewrite");
 
     if block["rewrite"].is_string() {
-        return Setting::Value(Rewrite::new(
-            block["rewrite"].to_str(),
-            RewriteStatus::default(),
-        ));
+        let r = Rewrite::new(block["rewrite"].to_str(), RewriteStatus::default())
+            .unwrap_exit(block["rewrite"].line());
+        return Setting::Value(r);
     }
 
     let rewrite = block["rewrite"].to_block();
@@ -251,12 +268,16 @@ fn parse_rewrite(block: &Block) -> Setting<Rewrite> {
 
     let status = rewrite
         .get("status")
-        .map(|d| RewriteStatus::from(d.to_str()))
+        .map(|d| RewriteStatus::from_str(d.to_str()).unwrap_exit(d.line()))
         .unwrap_or_default();
 
-    Setting::Value(Rewrite::new(rewrite["location"].to_str(), status))
+    Setting::Value(
+        Rewrite::new(rewrite["location"].to_str(), status).unwrap_exit(rewrite["location"].line()),
+    )
 }
 
+// todo
+// error line
 fn parse_ip(block: &Block) -> Setting<IpMatcher> {
     check_value!(block, "ip");
 
@@ -273,7 +294,7 @@ fn parse_ip(block: &Block) -> Setting<IpMatcher> {
         .map(|d| d.to_multiple_str())
         .unwrap_or_default();
 
-    Setting::Value(IpMatcher::new(allow, deny))
+    Setting::Value(IpMatcher::new(allow, deny).unwrap_exit(ip.line()))
 }
 
 fn parse_root<P: AsRef<Path>>(block: &Block, config_dir: P) -> Option<PathBuf> {
@@ -307,7 +328,7 @@ fn parse_listen(block: &Block) -> Vec<SocketAddr> {
     block["listen"]
         .to_multiple_str()
         .iter()
-        .map(transform::to_socket_addr)
+        .map(|s| util::to_socket_addr(s).unwrap_exit(block["listen"].line()))
         .collect::<BTreeSet<SocketAddr>>()
         .into_iter()
         .collect()
@@ -318,11 +339,9 @@ fn parse_header(block: &Block) -> Setting<Headers> {
     let header = block["header"].to_block().directives();
     let mut map = HashMap::new();
     for d in header {
-        let name = d.name().to_string();
-        let val = d.to_str();
-        let header_name = transform::to_header_name(&name);
-        let value = Var::from(val);
-        let header_value = value.map_none(transform::to_header_value);
+        let header_name = util::to_header_name(d.name()).unwrap_exit(d.line());
+        let value = Var::from(d.to_str());
+        let header_value = value.map_none(|s| util::to_header_value(&s).unwrap_exit(d.line()));
 
         map.insert(header_name, header_value);
     }
@@ -354,7 +373,7 @@ fn parse_directory(block: &Block) -> Setting<Directory> {
                 }
             } else {
                 // check
-                let _ = transform::to_strftime(d.to_str());
+                util::check_strftime(d.to_str()).unwrap_exit(d.line());
                 Some(d.to_str().to_string())
             }
         }
@@ -375,11 +394,11 @@ fn parse_proxy(block: &Block) -> Setting<Proxy> {
     proxy.check(&["url", "method", "header"], &["url"], &[]);
 
     let url_str = proxy["url"].to_str();
-    let url = Var::from(url_str).map_none(transform::to_url);
+    let url = Var::from(url_str).map_none(|s| util::to_url(&s).unwrap_exit(proxy["url"].line()));
 
     let method = proxy
         .get("method")
-        .map(|d| transform::to_method(d.to_str()));
+        .map(|d| util::to_method(d.to_str()).unwrap_exit(d.line()));
 
     Setting::Value(Proxy {
         url,
@@ -394,7 +413,7 @@ fn parse_compress(block: &Block) -> Setting<Compress> {
     // compress on
     if block["compress"].is_on() {
         return Setting::Value(Compress {
-            modes: vec![Encoding::Auto(default::COMPRESS_LEVEL)],
+            modes: vec![CompressMode::Auto(default::COMPRESS_LEVEL)],
             extensions: default::COMPRESS_EXTENSIONS
                 .iter()
                 .map(|e| (*e).to_string())
@@ -406,16 +425,18 @@ fn parse_compress(block: &Block) -> Setting<Compress> {
     compress.check(&["mode", "level", "extension"], &[], &[]);
 
     let level = match compress.get("level") {
-        Some(d) => CompressLevel::new(d.to_str()),
+        Some(d) => util::to_compress_level(d.to_str()).unwrap_exit(d.line()),
         None => default::COMPRESS_LEVEL,
     };
 
     let modes = match compress.get("mode") {
         Some(d) => {
             let mode = d.to_multiple_str();
-            mode.iter().map(|mode| Encoding::new(mode, level)).collect()
+            mode.iter()
+                .map(|mode| CompressMode::new(mode, level).unwrap_exit(d.line()))
+                .collect()
         }
-        None => vec![Encoding::Auto(level)],
+        None => vec![CompressMode::Auto(level)],
     };
 
     let extensions = match compress.get("extension") {
@@ -497,7 +518,7 @@ fn parse_error(block: &Block, root: &Option<PathBuf>) -> ErrorPage {
     let error = block["error"].to_block();
     let mut pages = HashMap::new();
     for d in error.directives() {
-        let status = transform::to_status_code(d.name());
+        let status = util::to_status_code(d.name()).unwrap_exit(d.line());
         let val = parse_error_value(&block, d.name());
         match val {
             Setting::Value(s) => {

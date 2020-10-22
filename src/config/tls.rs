@@ -1,4 +1,3 @@
-use crate::exit;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
@@ -10,36 +9,35 @@ use tokio_rustls::rustls::{
 };
 use tokio_rustls::TlsAcceptor;
 
-fn open_file<P: AsRef<Path>>(path: P) -> File {
-    File::open(&path)
-        .unwrap_or_else(|err| exit!("Open '{}' failed\n{:?}", path.as_ref().display(), err))
+fn open_file<P: AsRef<Path>>(path: P) -> Result<File, String> {
+    File::open(&path).map_err(|err| format!("Open '{}' failed\n{:?}", path.as_ref().display(), err))
 }
 
-fn load_certs<P: AsRef<Path>>(path: P) -> Vec<Certificate> {
-    let file = open_file(&path);
+fn load_certs<P: AsRef<Path>>(path: P) -> Result<Vec<Certificate>, String> {
+    let file = open_file(&path)?;
 
     certs(&mut BufReader::new(file))
-        .unwrap_or_else(|_| exit!("Load certs failed: {}", path.as_ref().display()))
+        .map_err(|_| format!("Load certs failed: {}", path.as_ref().display()))
 }
 
-fn load_keys<P: AsRef<Path>>(path: P) -> Vec<PrivateKey> {
+fn load_keys<P: AsRef<Path>>(path: P) -> Result<Vec<PrivateKey>, String> {
     let p = path.as_ref().display();
 
-    let file = open_file(&path);
+    let file = open_file(&path)?;
     let keys = rsa_private_keys(&mut BufReader::new(file))
-        .unwrap_or_else(|_| exit!("Load rsa_private_keys failed: {}", p));
+        .map_err(|_| format!("Load rsa_private_keys failed: {}", p))?;
     if !keys.is_empty() {
-        return keys;
+        return Ok(keys);
     }
 
-    let file = open_file(&path);
+    let file = open_file(&path)?;
     let keys = pkcs8_private_keys(&mut BufReader::new(file))
-        .unwrap_or_else(|_| exit!("Load pkcs8_private_keys failed: {}", p));
+        .map_err(|_| format!("Load pkcs8_private_keys failed: {}", p))?;
     if !keys.is_empty() {
-        return keys;
+        return Ok(keys);
     }
 
-    exit!("Load keys failed: '{}'", p)
+    Err(format!("Load keys failed: '{}'", p))
 }
 
 #[derive(Debug, Eq, PartialEq, Clone)]
@@ -49,13 +47,13 @@ pub struct TLSContent {
     pub sni: String,
 }
 
-pub fn create_sni_server_config(group: Vec<TLSContent>) -> TlsAcceptor {
+pub fn create_sni_server_config(group: Vec<TLSContent>) -> Result<TlsAcceptor, String> {
     let mut config = ServerConfig::new(NoClientAuth::new());
     let mut sni = ResolvesServerCertUsingSNI::new();
 
     for content in group {
-        let certs = load_certs(content.cert);
-        let mut keys = load_keys(content.key);
+        let certs = load_certs(content.cert)?;
+        let mut keys = load_keys(content.key)?;
         let sign = any_supported_type(&keys.remove(0)).unwrap();
         let cert = CertifiedKey::new(certs, Arc::new(sign));
 
@@ -65,5 +63,5 @@ pub fn create_sni_server_config(group: Vec<TLSContent>) -> TlsAcceptor {
     config.cert_resolver = Arc::new(sni);
     config.set_protocols(&[b"h2".to_vec(), b"http/1.1".to_vec()]);
 
-    TlsAcceptor::from(Arc::new(config))
+    Ok(TlsAcceptor::from(Arc::new(config)))
 }

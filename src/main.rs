@@ -1,3 +1,4 @@
+mod body;
 mod client;
 mod compress;
 mod conf;
@@ -9,8 +10,8 @@ mod server;
 mod util;
 
 use ace::App;
-use compress::BodyStream;
-use config::{default, transform, Headers, ServerConfig, Setting, SiteConfig, Var};
+use body::BodyStream;
+use config::{default, Headers, ServerConfig, Setting, SiteConfig, Var};
 use futures_util::future::join_all;
 use hyper::header::{
     HeaderName, HeaderValue, ACCEPT_ENCODING, CONTENT_ENCODING, CONTENT_LENGTH, CONTENT_TYPE, HOST,
@@ -57,7 +58,7 @@ async fn async_main() {
                         if values.len() != 1 {
                             exit!("-b value: [ADDRESS]");
                         }
-                        transform::to_socket_addr(values[0])
+                        util::to_socket_addr(values[0]).unwrap_or_else(|err| exit!("{}", err))
                     }
                     None => default::bind_addr(),
                 };
@@ -469,13 +470,13 @@ async fn try_files(_: &PathBuf, _: &Vec<Var<String>>, _: &Request<Body>) -> Opti
     todo!();
 }
 
-trait ResponseExtend<Body> {
+trait ResponseExt<Body> {
     fn error(status: StatusCode) -> Self;
     fn status(self, status: StatusCode) -> Self;
     fn header(self, key: HeaderName, val: HeaderValue) -> Self;
 }
 
-impl ResponseExtend<Body> for Response<Body> {
+impl ResponseExt<Body> for Response<Body> {
     fn error(status: StatusCode) -> Self {
         Response::new(Body::from(status.to_string()))
             .status(status)

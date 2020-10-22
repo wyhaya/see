@@ -1,5 +1,5 @@
-use crate::config::transform;
 use crate::matcher::{replace_match_keyword, END_WORD, REGEX_WORD, START_WORD};
+use crate::util;
 use globset::GlobMatcher;
 use regex::Regex;
 
@@ -16,26 +16,26 @@ enum MatchMode {
 }
 
 impl LocationMatcher {
-    pub fn new(location: &str) -> Self {
+    pub fn new(location: &str) -> Result<Self, String> {
         // Regex
         if let Some(raw) = replace_match_keyword(location, REGEX_WORD) {
-            let reg = transform::to_regex(raw);
-            return LocationMatcher(MatchMode::Regex(reg));
+            let reg = util::to_regex(&raw)?;
+            return Ok(LocationMatcher(MatchMode::Regex(reg)));
         }
 
         // Start
         if let Some(raw) = replace_match_keyword(location, START_WORD) {
-            return LocationMatcher(MatchMode::Start(raw));
+            return Ok(LocationMatcher(MatchMode::Start(raw)));
         }
 
         // End
         if let Some(raw) = replace_match_keyword(location, END_WORD) {
-            return LocationMatcher(MatchMode::End(raw));
+            return Ok(LocationMatcher(MatchMode::End(raw)));
         }
 
         // Glob
-        let glob = transform::to_glob(location);
-        LocationMatcher(MatchMode::Glob(glob))
+        let glob = util::to_glob(location)?;
+        Ok(LocationMatcher(MatchMode::Glob(glob)))
     }
 
     pub fn is_match(&self, path: &str) -> bool {

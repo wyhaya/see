@@ -3,12 +3,12 @@ use hyper::header::HeaderValue;
 
 #[derive(Debug, Clone)]
 pub struct Compress {
-    pub modes: Vec<Encoding>,
+    pub modes: Vec<CompressMode>,
     pub extensions: Vec<String>,
 }
 
 impl Compress {
-    pub fn get_compress_mode(&self, header: &HeaderValue, ext: &str) -> Option<CompressMode> {
+    pub fn get_compress_mode(&self, header: &HeaderValue, ext: &str) -> Option<Encoding> {
         if self.extensions.iter().any(|item| *item == ext) {
             // accept-encoding: gzip, deflate, br
             let header: Vec<&str> = match header.to_str() {
@@ -16,8 +16,8 @@ impl Compress {
                 Err(_) => return None,
             };
 
-            for encoding in &self.modes {
-                if let Some(compress) = encoding.compress_mode(&header) {
+            for mode in &self.modes {
+                if let Some(compress) = mode.encoding(&header) {
                     return Some(compress);
                 }
             }

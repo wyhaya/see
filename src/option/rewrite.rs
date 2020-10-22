@@ -1,7 +1,8 @@
-use crate::config::{transform, Var};
-use crate::{exit, ResponseExtend};
+use crate::config::Var;
+use crate::{util, ResponseExt};
 use hyper::header::{HeaderValue, LOCATION};
 use hyper::{Body, Request, Response, StatusCode};
+use std::str::FromStr;
 
 #[derive(Debug, Clone)]
 pub struct Rewrite {
@@ -10,11 +11,13 @@ pub struct Rewrite {
 }
 
 impl Rewrite {
-    pub fn new(location: &str, status: RewriteStatus) -> Self {
-        Self {
-            location: Var::from(location).map_none(transform::to_header_value),
-            status,
-        }
+    pub fn new(location: &str, status: RewriteStatus) -> Result<Self, String> {
+        let location = match Var::from(location) {
+            Var::Some(s, r) => Var::Some(s, r),
+            Var::None(s) => Var::None(util::to_header_value(&s)?),
+        };
+
+        Ok(Self { location, status })
     }
 
     pub fn response(self, req: &Request<Body>) -> Response<Body> {
@@ -40,15 +43,16 @@ pub enum RewriteStatus {
     _302,
 }
 
-impl From<&str> for RewriteStatus {
-    fn from(s: &str) -> Self {
+impl FromStr for RewriteStatus {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "301" => RewriteStatus::_301,
-            "302" => RewriteStatus::_302,
-            _ => exit!(
+            "301" => Ok(RewriteStatus::_301),
+            "302" => Ok(RewriteStatus::_302),
+            _ => Err(format!(
                 "Cannot parse `{}` to rewrite status, optional value: '301' '302'",
                 s
-            ),
+            )),
         }
     }
 }

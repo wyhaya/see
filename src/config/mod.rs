@@ -1,6 +1,5 @@
 pub mod default;
 pub mod tls;
-pub mod transform;
 
 mod parser;
 mod setting;
@@ -26,11 +25,30 @@ use tokio_rustls::TlsAcceptor;
 pub type Headers = HashMap<HeaderName, Var<HeaderValue>>;
 pub type ErrorPage = Setting<HashMap<StatusCode, Setting<PathBuf>>>;
 
+// Bind to multiple sites at the same address
 #[derive(Clone)]
 pub struct ServerConfig {
     pub listen: SocketAddr,
     pub tls: Option<TlsAcceptor>,
     pub sites: Vec<SiteConfig>,
+}
+
+// Parse config from file
+// The process will exit if it encounters an error
+impl ServerConfig {
+    pub async fn new(path: &str) -> Vec<Self> {
+        let config_dir = Path::new(&path)
+            .parent()
+            .unwrap_or_else(|| exit!("Cannot get configuration file directory"));
+
+        let content = fs::read_to_string(&path)
+            .unwrap_or_else(|err| exit!("Read '{}' failed\n{:?}", path, err));
+
+        let block = Block::from_str(&content)
+            .unwrap_or_else(|err| exit!("Parsing config file failed\n{}", err));
+
+        parse_server(&block, config_dir).await
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -75,22 +93,6 @@ pub struct Location {
     pub ip: Setting<IpMatcher>,
 }
 
-impl ServerConfig {
-    pub async fn new(path: &str) -> Vec<Self> {
-        let config_dir = Path::new(&path)
-            .parent()
-            .unwrap_or_else(|| exit!("Cannot get configuration file directory"));
-
-        let content = fs::read_to_string(&path)
-            .unwrap_or_else(|err| exit!("Read '{}' failed\n{:?}", path, err));
-
-        let conf = Block::from_str(&content)
-            .unwrap_or_else(|err| exit!("Parsing config file failed\n{}", err));
-
-        parse_server(&conf, config_dir).await
-    }
-}
-
 impl SiteConfig {
     pub fn merge(mut self, route: &str) -> Self {
         for item in self.location {
@@ -113,12 +115,12 @@ impl SiteConfig {
                 self.directory = item.directory;
             }
             if !item.headers.is_none() {
-                if item.headers.is_value() {
-                    let mut h = self.headers.clone().unwrap_or_default();
-                    h.extend(item.headers.into_value());
-                    self.headers = Setting::Value(h);
-                } else if item.headers.is_off() {
+                if item.headers.is_off() {
                     self.headers = Setting::Off;
+                } else if item.headers.is_off() {
+                    let mut headers = self.headers.into_value();
+                    headers.extend(item.headers.into_value());
+                    self.headers = Setting::Value(headers);
                 }
             }
             if !item.rewrite.is_none() {

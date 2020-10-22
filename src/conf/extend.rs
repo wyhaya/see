@@ -13,7 +13,7 @@ impl BlockExt for Block {
         for directive in self.directives() {
             if !allow.contains(&directive.name()) {
                 exit!(
-                    "[line: {}] Unknown directive `{}`",
+                    "[line:{}] Unknown directive `{}`",
                     directive.line(),
                     directive.name()
                 )
@@ -23,7 +23,7 @@ impl BlockExt for Block {
         // Required values
         for name in required {
             if self.get(name).is_none() {
-                exit!("[line: {}] Missing directive `{}`", self.line(), name)
+                exit!("[line:{}] Missing directive `{}`", self.line(), name)
             }
         }
 
@@ -33,7 +33,7 @@ impl BlockExt for Block {
                 let all = self.get_all(directive.name());
                 if all.len() > 1 {
                     let d = all[all.len() - 1];
-                    exit!("[line: {}] Repeated directive `{}`", d.line(), d.name())
+                    exit!("[line:{}] Repeated directive `{}`", d.line(), d.name())
                 }
             }
         }
@@ -57,7 +57,7 @@ impl DirectiveExt for Directive {
             }
         }
         exit!(
-            "[line: {}] Directive `{}` does not allow multiple values",
+            "[line:{}] Directive `{}` does not allow multiple values",
             self.line(),
             self.name()
         )
@@ -66,7 +66,7 @@ impl DirectiveExt for Directive {
     fn to_source_str(&self) -> &str {
         self.as_source_str().unwrap_or_else(|| {
             exit!(
-                "[line: {}] Cannot convert `{}` to 'string'",
+                "[line:{}] Cannot convert `{}` to 'string'",
                 self.line(),
                 self.name()
             )
@@ -86,7 +86,7 @@ impl DirectiveExt for Directive {
             return val;
         }
         exit!(
-            "[line: {}] Cannot convert `{}` to 'boolean'",
+            "[line:{}] Cannot convert `{}` to 'boolean'",
             self.line(),
             self.name()
         )
@@ -97,7 +97,7 @@ impl DirectiveExt for Directive {
             return val;
         }
         exit!(
-            "[line: {}] Cannot convert `{}` to 'block'",
+            "[line:{}] Cannot convert `{}` to 'block'",
             self.line(),
             self.name()
         )
@@ -108,7 +108,7 @@ impl DirectiveExt for Directive {
             return val;
         }
         exit!(
-            "[line: {}] Cannot convert `{}` to 'value block'",
+            "[line:{}] Cannot convert `{}` to 'value block'",
             self.line(),
             self.name()
         )

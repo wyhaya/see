@@ -1,5 +1,5 @@
-use crate::config::transform;
 use crate::matcher::{replace_match_keyword, WildcardMatcher, ANY_WORD, REGEX_WORD};
+use crate::util;
 use regex::Regex;
 
 // Match http header 'host'
@@ -24,13 +24,13 @@ impl Default for HostMatcher {
 }
 
 impl HostMatcher {
-    pub fn new(items: Vec<&str>) -> HostMatcher {
+    pub fn new(items: Vec<&str>) -> Result<HostMatcher, String> {
         let mut modes = vec![];
 
         for item in items {
             // Use regex: ~^example\.com$
-            if let Some(raw) = replace_match_keyword(&item, REGEX_WORD) {
-                let reg = transform::to_regex(raw);
+            if let Some(s) = replace_match_keyword(&item, REGEX_WORD) {
+                let reg = util::to_regex(&s)?;
                 modes.push(MatchMode::Regex(reg));
                 continue;
             }
@@ -46,7 +46,7 @@ impl HostMatcher {
             modes.push(MatchMode::Text(item.to_string()));
         }
 
-        HostMatcher { modes }
+        Ok(HostMatcher { modes })
     }
 
     pub fn get_raw(&self) -> Vec<&String> {
