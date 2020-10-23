@@ -1,5 +1,3 @@
-use crate::matcher::ANY_WORD;
-
 #[derive(Debug, Clone)]
 pub struct WildcardMatcher {
     chars: Vec<char>,
@@ -18,7 +16,7 @@ impl WildcardMatcher {
 
         for ch in &self.chars {
             match ch {
-                &ANY_WORD => {
+                '*' => {
                     match chars.next() {
                         Some(c) => {
                             if c == '.' {

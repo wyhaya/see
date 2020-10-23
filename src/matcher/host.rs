@@ -1,6 +1,5 @@
-use crate::matcher::{replace_match_keyword, WildcardMatcher, ANY_WORD, REGEX_WORD};
-use crate::util;
-use regex::Regex;
+use crate::matcher::WildcardMatcher;
+use std::collections::BTreeSet;
 
 // Match http header 'host'
 #[derive(Debug, Clone)]
@@ -12,41 +11,35 @@ pub struct HostMatcher {
 enum MatchMode {
     Text(String),
     Wildcard(WildcardMatcher),
-    Regex(Regex),
 }
 
 impl Default for HostMatcher {
     fn default() -> HostMatcher {
         HostMatcher {
-            modes: Vec::with_capacity(0),
+            modes: Vec::default(),
         }
     }
 }
 
 impl HostMatcher {
-    pub fn new(items: Vec<&str>) -> Result<HostMatcher, String> {
-        let mut modes = vec![];
-
-        for item in items {
-            // Use regex: ~^example\.com$
-            if let Some(s) = replace_match_keyword(&item, REGEX_WORD) {
-                let reg = util::to_regex(&s)?;
-                modes.push(MatchMode::Regex(reg));
-                continue;
-            }
-
-            // Use wildcard match: *.example.com
-            if item.contains(ANY_WORD) {
-                let wildcard = MatchMode::Wildcard(WildcardMatcher::new(&item));
-                modes.push(wildcard);
-                continue;
-            }
-
-            // Plain Text: example.com
-            modes.push(MatchMode::Text(item.to_string()));
+    // Creating a collection of host matchers
+    pub fn new(items: Vec<&str>) -> Self {
+        Self {
+            modes: items
+                .into_iter()
+                .collect::<BTreeSet<&str>>()
+                .into_iter()
+                .map(|item| {
+                    if item.contains('*') {
+                        // Use wildcard match: *.example.com
+                        MatchMode::Wildcard(WildcardMatcher::new(item))
+                    } else {
+                        // Plain Text: example.com
+                        MatchMode::Text(item.to_string())
+                    }
+                })
+                .collect::<Vec<MatchMode>>(),
         }
-
-        Ok(HostMatcher { modes })
     }
 
     pub fn get_raw(&self) -> Vec<&String> {
@@ -84,11 +77,6 @@ impl HostMatcher {
                         return true;
                     }
                 }
-                MatchMode::Regex(reg) => {
-                    if reg.is_match(host) {
-                        return true;
-                    }
-                }
             }
         }
 
@@ -100,30 +88,22 @@ impl HostMatcher {
 mod test {
     use super::*;
 
-    macro_rules! host_matcher {
-        ($host: expr) => {
-            HostMatcher::new(vec![$host])
-        };
-    }
-
     #[test]
     fn create() {}
 
     #[test]
     fn text() {
-        let matcher = host_matcher!("example.com");
+        let matcher = HostMatcher::new(vec!["example.com"]);
         assert!(matcher.is_match("example.com"));
         assert!(!matcher.is_match("-example.com"));
         assert!(!matcher.is_match("example.com.cn"));
     }
 
     #[test]
-    fn regex() {
-        let matcher = host_matcher!("~^example.com$");
-        assert!(matcher.is_match("example.com"));
-        assert!(!matcher.is_match("test.example.com"));
+    fn wildcard() {
+        let matcher = HostMatcher::new(vec!["*.com"]);
+        assert!(matcher.is_match("a.com"));
+        assert!(!matcher.is_match("a.cn"));
+        assert!(!matcher.is_match("a.a.cn"));
     }
-
-    #[test]
-    fn multiple() {}
 }

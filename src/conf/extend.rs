@@ -30,7 +30,7 @@ impl BlockExt for Block {
         // Repeated values
         for directive in self.directives() {
             if !repeat.contains(&directive.name()) {
-                let all = self.get_all(directive.name());
+                let all = self.get_all_by_name(directive.name());
                 if all.len() > 1 {
                     let d = all[all.len() - 1];
                     exit!("[line:{}] Repeated directive `{}`", d.line(), d.name())

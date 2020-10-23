@@ -19,8 +19,6 @@ server {
   host exmaple.com     # Domain name
   # or
   host *.exmaple.com   # Wildcard
-  # or
-  host ~/*.go+gle.com  # Regex
 }
 ```
 
@@ -233,34 +231,32 @@ server {
 
 ## Location
 
-Separately configured for certain locations
+#### Modifier
 
-Match pattern
-
-* Use `glob` matching by default
-* `~` Use regular expressions
-* `^` Match start character
-* `$` Match end character
+* `@` Matching with glob expression
+* `~` Matching using regular expression
+* `^` Matching the start of a location with a string
+* `$` Matching the end of a location with a string
 
 ```sh
 server {
-  location /public {
+  @ /public {
     directory on
   }
-  location /private/** {
+  @ /private/** {
     auth {
       user 123
       password 456
     }
   }
-  location ~[1-9]{10} {
-    echo Match regex
+  ~ ^/[1-9]{10}$ {
+    echo regex
   }
-  location ^start {
-    echo Match start
+  ^ /start {
+    echo start
   }
-  location $.png {
-    echo Match end
+  $ .png {
+    echo end
   }
 }
 ```

@@ -32,16 +32,24 @@ impl Block {
         self.line
     }
 
-    // Get directive based on key
+    // Get the first directive by name
     pub fn get(&self, name: &str) -> Option<&Directive> {
         self.directives.iter().find(|item| item.name == name)
     }
 
-    // Get all directive with a specific name
-    pub fn get_all(&self, name: &str) -> Vec<&Directive> {
+    // Get all directive by specific name
+    pub fn get_all_by_name(&self, name: &str) -> Vec<&Directive> {
         self.directives
             .iter()
             .filter(|item| item.name == name)
+            .collect::<Vec<&Directive>>()
+    }
+
+    // Get all directive by multiple names
+    pub fn get_all_by_names(&self, names: &[&str]) -> Vec<&Directive> {
+        self.directives
+            .iter()
+            .filter(|item| names.contains(&item.name()))
             .collect::<Vec<&Directive>>()
     }
 

@@ -1,4 +1,3 @@
-use crate::matcher::{replace_match_keyword, END_WORD, REGEX_WORD, START_WORD};
 use crate::util;
 use globset::GlobMatcher;
 use regex::Regex;
@@ -16,26 +15,24 @@ enum MatchMode {
 }
 
 impl LocationMatcher {
-    pub fn new(location: &str) -> Result<Self, String> {
-        // Regex
-        if let Some(raw) = replace_match_keyword(location, REGEX_WORD) {
-            let reg = util::to_regex(&raw)?;
-            return Ok(LocationMatcher(MatchMode::Regex(reg)));
-        }
+    // Matching with glob expression
+    pub fn glob(location: &str) -> Result<Self, String> {
+        Ok(LocationMatcher(MatchMode::Glob(util::to_glob(location)?)))
+    }
 
-        // Start
-        if let Some(raw) = replace_match_keyword(location, START_WORD) {
-            return Ok(LocationMatcher(MatchMode::Start(raw)));
-        }
+    // Matching using regular expression
+    pub fn regex(location: &str) -> Result<Self, String> {
+        Ok(LocationMatcher(MatchMode::Regex(util::to_regex(location)?)))
+    }
 
-        // End
-        if let Some(raw) = replace_match_keyword(location, END_WORD) {
-            return Ok(LocationMatcher(MatchMode::End(raw)));
-        }
+    // Matching the start of a location with a string
+    pub fn start(location: &str) -> Self {
+        LocationMatcher(MatchMode::Start(location.to_string()))
+    }
 
-        // Glob
-        let glob = util::to_glob(location)?;
-        Ok(LocationMatcher(MatchMode::Glob(glob)))
+    // Matching the end of a location with a string
+    pub fn end(location: &str) -> Self {
+        LocationMatcher(MatchMode::End(location.to_string()))
     }
 
     pub fn is_match(&self, path: &str) -> bool {
@@ -57,28 +54,28 @@ mod test {
 
     #[test]
     fn start() {
-        let matcher = LocationMatcher::new("^/test/");
+        let matcher = LocationMatcher::start("/test/");
         assert!(matcher.is_match("/test/a"));
         assert!(matcher.is_match("/test/a/b"));
     }
 
     #[test]
     fn end() {
-        let matcher = LocationMatcher::new("$.png");
+        let matcher = LocationMatcher::end(".png");
         assert!(matcher.is_match("/test/a.png"));
         assert!(matcher.is_match("/test/a/b.png"));
     }
 
     #[test]
     fn regex() {
-        let matcher = LocationMatcher::new(r"~/test/.*");
+        let matcher = LocationMatcher::regex(r"/test/.*").unwrap();
         assert!(matcher.is_match("/test/a"));
         assert!(matcher.is_match("/test/a/b"));
     }
 
     #[test]
     fn glob() {
-        let matcher = LocationMatcher::new("/test/*");
+        let matcher = LocationMatcher::glob("/test/*").unwrap();
         assert!(matcher.is_match("/test/a"));
         assert!(matcher.is_match("/test/a/b"));
     }

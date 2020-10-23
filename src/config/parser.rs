@@ -53,10 +53,14 @@ pub async fn parse_server<P: AsRef<Path>>(block: &Block, config_dir: P) -> Vec<S
                 "proxy",
                 "log",
                 "ip",
-                "location",
+                // location
+                "@",                
+                "~",
+                "^",
+                "$",
             ],
             &["listen"],
-            &["location"],
+            &["@", "~", "^", "$"],
         );
         let listens = parse_listen(server);
         let host = parse_host(server);
@@ -131,7 +135,8 @@ async fn parse_location<P: AsRef<Path>>(
     config_dir: P,
     parent_root: Option<PathBuf>,
 ) -> Vec<Location> {
-    if block.get("location").is_none() {
+    let locations = block.get_all_by_names(&["@", "~", "^", "$"]);
+    if locations.is_empty() {
         return vec![];
     }
     let root = match parse_root(&block, config_dir.as_ref()) {
@@ -139,7 +144,7 @@ async fn parse_location<P: AsRef<Path>>(
         None => parent_root.clone(),
     };
     let mut vec = vec![];
-    for d in block.get_all("location") {
+    for d in locations {
         let (route, location) = d.to_value_block();
         location.check(
             &[
@@ -165,7 +170,13 @@ async fn parse_location<P: AsRef<Path>>(
         );
 
         vec.push(Location {
-            location: LocationMatcher::new(route).unwrap_exit(d.line()),
+            location: match d.name() {
+                "@" => LocationMatcher::glob(route).unwrap_exit(d.line()),
+                "~" => LocationMatcher::regex(route).unwrap_exit(d.line()),
+                "^" => LocationMatcher::start(route),
+                "$" => LocationMatcher::end(route),
+                _ => unreachable!(),
+            },
             break_: parse_break(location),
             root: root.clone(),
             echo: parse_echo(location),
@@ -207,14 +218,13 @@ fn parse_method(block: &Block, set_default: bool) -> Setting<Method> {
     Setting::Value(Method::new(methods))
 }
 
-// todo
 fn parse_host(block: &Block) -> HostMatcher {
-    let vec = block
-        .get("host")
-        .map(|d| d.to_multiple_str())
-        .unwrap_or_default();
-    let line = block.get("host").map(|d| d.line()).unwrap_or_default();
-    HostMatcher::new(vec).unwrap_exit(line)
+    HostMatcher::new(
+        block
+            .get("host")
+            .map(|d| d.to_multiple_str())
+            .unwrap_or_default(),
+    )
 }
 
 // todo

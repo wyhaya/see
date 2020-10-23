@@ -1,4 +1,4 @@
-use crate::matcher::{WildcardMatcher, ANY_WORD};
+use crate::matcher::WildcardMatcher;
 use crate::util;
 use std::net::IpAddr;
 
@@ -15,11 +15,11 @@ enum MatchMode {
 }
 
 impl MatchMode {
-    fn new(raw: &str) -> Result<Self, String> {
-        if raw.contains(ANY_WORD) {
-            Ok(Self::Wildcard(WildcardMatcher::new(raw)))
+    fn new(s: &str) -> Result<Self, String> {
+        if s.contains('*') {
+            Ok(Self::Wildcard(WildcardMatcher::new(s)))
         } else {
-            Ok(Self::Ip(util::to_ip_addr(raw)?))
+            Ok(Self::Ip(util::to_ip_addr(s)?))
         }
     }
 
