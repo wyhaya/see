@@ -2,17 +2,17 @@ use hyper::{Body, Request, Uri};
 use lazy_static::lazy_static;
 use regex::Regex;
 
-const REQUEST_PATH: &str = "${path}";
-const REQUEST_QUERY: &str = "${query}";
-const REQUEST_METHOD: &str = "${method}";
-const REQUEST_VERSION: &str = "${version}";
+const REQUEST_PATH: &str = "$`path`";
+const REQUEST_QUERY: &str = "$`query`";
+const REQUEST_METHOD: &str = "$`method`";
+const REQUEST_VERSION: &str = "$`version`";
 
 const REQUEST_QUERY_KEY: &str = "query_";
 const REQUEST_HEADER_KEY: &str = "header_";
 
 lazy_static! {
-    static ref REGEX_QUERY: Regex = Regex::new(r"\$\{query_([\w|-]+)\}").unwrap();
-    static ref REGEX_HEADER: Regex = Regex::new(r"\$\{header_([\w|-]+)\}").unwrap();
+    static ref REGEX_QUERY: Regex = Regex::new(r"\$`query_([\w|-]+)`").unwrap();
+    static ref REGEX_HEADER: Regex = Regex::new(r"\$`header_([\w|-]+)`").unwrap();
 }
 
 #[derive(Debug, Clone)]
@@ -122,7 +122,7 @@ impl Replace {
             let reg: &Regex = &REGEX_QUERY;
             for cap in reg.captures_iter(&source.clone()) {
                 if let Some(m) = cap.get(1) {
-                    let from = format!("${{{}{}}}", REQUEST_QUERY_KEY, m.as_str());
+                    let from = format!("$`{}{}`", REQUEST_QUERY_KEY, m.as_str());
                     let to = req.uri().get_query(m.as_str()).unwrap_or_default();
                     source = source.replace(from.as_str(), to);
                 }
@@ -133,7 +133,7 @@ impl Replace {
             let reg: &Regex = &REGEX_HEADER;
             for cap in reg.captures_iter(&source.clone()) {
                 if let Some(m) = cap.get(1) {
-                    let from = format!("${{{}{}}}", REQUEST_HEADER_KEY, m.as_str());
+                    let from = format!("$`{}{}`", REQUEST_HEADER_KEY, m.as_str());
                     let to = match req.headers().get(m.as_str()) {
                         Some(h) => h.to_str().unwrap(),
                         None => "",
@@ -168,5 +168,5 @@ impl GetQuery for Uri {
 
 #[test]
 fn test_var() {
-    let _ = Var::from("${path}");
+    let _ = Var::from("$`path`");
 }

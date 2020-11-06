@@ -48,7 +48,7 @@ server {
 server {
   echo Hello wrold
   # or
-  echo Hello, ${path}
+  echo Hello, $`path`
 }
 ```
 
@@ -67,7 +67,7 @@ server {
   rewrite /example     # Default 302
   # or
   rewrite {
-    location https://${header_host}${path}
+    location https://$`header_host`$`path`
     status 301
   }
 }
@@ -159,7 +159,7 @@ server {
 
 ```sh
 server {
-  try ${path}.html index.html
+  try $`path`.html index.html
 }
 ```
 
@@ -194,7 +194,7 @@ server {
   }
   # or
   proxy {
-    url http://example.com${path}${query}
+    url http://example.com$`path`$`query`
   }
 }
 ```
@@ -211,7 +211,7 @@ server {
   # or
   log {
     file /var/log/www.log
-    format ${path} ${header_host}
+    format $`path` $`header_host`
   }
 }
 ```
@@ -265,16 +265,18 @@ server {
 
 Built-in variables can be used in `echo` `rewrite` `header` `proxy`
 
-* `${path}`
-* `${query}`
-* `${method}`
-* `${version}`
-* `${query_NAME}`
-* `${header_NAME}`
+```
+$`path`
+$`query`
+$`method`
+$`version`
+$`query_NAME`
+$`header_NAME`
+```
 
 ```sh
 server {
-  echo Hello ${path}, ${header_host}
+  echo Hello $`path`, $`header_host`
 }
 ```
 

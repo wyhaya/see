@@ -54,7 +54,7 @@ pub async fn parse_server<P: AsRef<Path>>(block: &Block, config_dir: P) -> Vec<S
                 "log",
                 "ip",
                 // location
-                "@",                
+                "@",
                 "~",
                 "^",
                 "$",
