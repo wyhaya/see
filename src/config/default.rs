@@ -5,7 +5,6 @@ use async_compression::Level;
 use hyper::Method as HttpMethod;
 use std::net::SocketAddr;
 use std::path::PathBuf;
-use std::time::Duration;
 
 // Package
 
@@ -34,8 +33,6 @@ pub const INDEX: [&str; 1] = ["index.html"];
 pub const DIRECTORY_TIME_FORMAT: &str = "%Y-%m-%d %H:%M";
 
 pub const BUF_SIZE: usize = 16 * 1024;
-
-pub const CONNECT_TIMEOUT: Duration = Duration::from_millis(5000);
 
 // Should be synchronized with src/var.rs
 pub const LOG_FORMAT: &str = "$`method` $`header_host`$`path`$`query` $`header_user-agent`";

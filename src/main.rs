@@ -27,12 +27,11 @@ use tokio::runtime;
 use util::{absolute_path, current_dir, get_extension, is_file};
 
 fn main() {
-    let mut runtime = runtime::Builder::new()
+    let runtime = runtime::Builder::new_multi_thread()
         .thread_name(default::SERVER_NAME)
-        .threaded_scheduler()
         .enable_all()
-        .core_threads(num_cpus::get())
-        .max_threads(num_cpus::get() + 1)
+        .worker_threads(num_cpus::get())
+        .max_blocking_threads(num_cpus::get() + 1)
         .build()
         .unwrap_or_else(|err| exit!("Cannot create async runtime\n{:?}", err));
 

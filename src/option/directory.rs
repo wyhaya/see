@@ -3,7 +3,6 @@ use std::path::PathBuf;
 use std::time::UNIX_EPOCH;
 use time::Timespec;
 use tokio::fs::{self, DirEntry};
-use tokio::stream::StreamExt;
 
 // HTML directory template
 const TEMPLATE: &str = r#"<!DOCTYPE html>
@@ -78,8 +77,14 @@ impl Directory {
         let mut dir = fs::read_dir(dir).await.map_err(|_| ())?;
         let mut fus = vec![];
 
-        while let Some(entry) = dir.next().await {
-            let entry = entry.map_err(|_| ())?;
+        loop {
+            let entry = match dir.next_entry().await {
+                Ok(opt) => match opt {
+                    Some(entry) => entry,
+                    None => break,
+                },
+                Err(_) => return Err(()),
+            };
             if let Some(name) = entry.file_name().to_str() {
                 if !name.starts_with('.') {
                     fus.push(Self::render_row(entry, &self.time, self.size));
