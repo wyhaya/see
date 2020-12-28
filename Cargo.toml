@@ -24,7 +24,7 @@ codegen-units = 1
 
 [dependencies]
 ace = "0.2.0"
-async-compression = { version = "0.3.7", features = ["stream", "gzip", "deflate", "brotli"] }
+async-compression = { version = "0.3.7", features = ["tokio", "gzip", "deflate", "brotli"] }
 base64 = "0.13.0"
 dirs = "3.0.1"
 futures-util = { version = "0.3.8", default-features = false, features = ["std"] }

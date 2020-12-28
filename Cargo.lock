@@ -55,11 +55,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b72c1f1154e234325b50864a349b9c8e56939e266a4c307c0f159812df2f9537"
 dependencies = [
  "brotli",
- "bytes 0.5.6",
  "flate2",
  "futures-core",
  "memchr",
  "pin-project-lite",
+ "tokio",
 ]
 
 [[package]]
