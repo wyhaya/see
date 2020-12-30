@@ -2,20 +2,21 @@ use crate::option::{Directory, Method};
 use crate::util::home_dir;
 use crate::{ServerConfig, Setting, SiteConfig};
 use async_compression::Level;
+use clap::{crate_name, crate_version};
 use hyper::Method as HttpMethod;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 
 // Package
 
-pub const SERVER_NAME: &str = env!("CARGO_PKG_NAME");
+pub const SERVER_NAME: &str = crate_name!();
 
-pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+pub const VERSION: &str = crate_version!();
 
 // Config file
 
-pub fn config_path() -> PathBuf {
-    home_dir().join(".see.conf")
+pub fn config_path() -> String {
+    home_dir().join(".see.conf").display().to_string()
 }
 
 // Server config

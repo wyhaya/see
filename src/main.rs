@@ -1,3 +1,4 @@
+mod app;
 mod body;
 mod client;
 mod compress;
@@ -9,7 +10,7 @@ mod option;
 mod server;
 mod util;
 
-use ace::App;
+use app::{run, RunType};
 use body::BodyStream;
 use config::{default, Headers, ServerConfig, Setting, SiteConfig, Var};
 use futures_util::future::join_all;
@@ -24,101 +25,45 @@ use std::path::{Path, PathBuf};
 use tokio::fs::{self, File};
 use tokio::net::TcpListener;
 use tokio::runtime;
-use util::{absolute_path, current_dir, get_extension, is_file};
 
 fn main() {
-    let runtime = runtime::Builder::new_multi_thread()
+    runtime::Builder::new_multi_thread()
         .thread_name(default::SERVER_NAME)
         .enable_all()
         .worker_threads(num_cpus::get())
         .max_blocking_threads(num_cpus::get() + 1)
         .build()
-        .unwrap_or_else(|err| exit!("Cannot create async runtime\n{:?}", err));
-
-    runtime.block_on(async_main());
+        .unwrap_or_else(|err| exit!("Cannot create async runtime\n{:?}", err))
+        .block_on(async_main());
 }
 
 async fn async_main() {
-    let app = App::new()
-        .config(default::SERVER_NAME, default::VERSION)
-        .cmd("start", "Quick start in the current directory")
-        .cmd("help", "Print help information")
-        .cmd("version", "Print version information")
-        .opt("-b", "Change the 'start' binding address")
-        .opt("-p", "Change the 'start' root directory")
-        .opt("-c", "Set configuration file")
-        .opt("-t", "Test the config file for error");
-
-    if let Some(cmd) = app.command() {
-        match cmd.as_str() {
-            "start" => {
-                let addr = match app.value("-b") {
-                    Some(values) => {
-                        if values.len() != 1 {
-                            exit!("-b value: [ADDRESS]");
-                        }
-                        util::to_socket_addr(values[0]).unwrap_or_else(|err| exit!("{}", err))
-                    }
-                    None => default::bind_addr(),
-                };
-
-                let path = match app.value("-p") {
-                    Some(values) => {
-                        if values.len() != 1 {
-                            exit!("-p value: [DIR]");
-                        }
-                        absolute_path(values[0], current_dir())
-                    }
-                    None => current_dir(),
-                };
-
-                let config = default::quick_start_config(path.clone(), addr);
-
-                let port = match addr.port() {
-                    80 => String::new(),
-                    _ => format!(":{}", addr.port()),
-                };
-
-                println!("Serving path   : {}", path.display());
-                println!(
-                    "Serving address: {}",
-                    format!("http://{}{}", addr.ip(), port)
+    let configs = match run() {
+        RunType::Start(addr, path) => {
+            let config = default::quick_start_config(path.clone(), addr);
+            let port = match addr.port() {
+                80 => String::new(),
+                _ => format!(":{}", addr.port()),
+            };
+            println!("Serving path   : {}", path.display());
+            println!(
+                "Serving address: {}",
+                format!("http://{}{}", addr.ip(), port)
+            );
+            vec![config]
+        }
+        RunType::Config(config_path, is_test) => {
+            let configs = ServerConfig::new(&config_path).await;
+            // Check configuration file
+            if is_test {
+                return println!(
+                    "There are no errors in the configuration file '{}'",
+                    config_path
                 );
-
-                return bind_tcp(vec![config]).await;
             }
-            "help" => {
-                return app.print_help();
-            }
-            "version" => {
-                return app.print_version();
-            }
-            _ => {
-                return app.print_error_try("help");
-            }
+            configs
         }
-    }
-
-    let config_path = match app.value("-c") {
-        Some(values) => {
-            if values.len() != 1 {
-                exit!("-c value: [CONFIG_FILE]");
-            }
-            values[0].clone()
-        }
-        None => default::config_path().display().to_string(),
     };
-
-    let configs = ServerConfig::new(&config_path).await;
-
-    // Check configuration file
-    if app.value("-t").is_some() {
-        return println!(
-            "There are no errors in the configuration file '{}'",
-            config_path
-        );
-    }
-
     bind_tcp(configs).await;
 }
 
@@ -293,7 +238,7 @@ async fn handle(
                     return response_file(
                         StatusCode::OK,
                         file,
-                        get_extension(&path),
+                        util::get_extension(&path),
                         req.headers().get(ACCEPT_ENCODING),
                         &config,
                     )
@@ -399,10 +344,16 @@ pub async fn response_error_page(
     if let Setting::Value(pages) = &config.error {
         if let Some(setting) = pages.get(&status) {
             if let Setting::Value(path) = setting {
-                if is_file(path).await {
+                if util::is_file(path).await {
                     if let Ok(f) = File::open(&path).await {
-                        return response_file(status, f, get_extension(&path), encoding, &config)
-                            .await;
+                        return response_file(
+                            status,
+                            f,
+                            util::get_extension(&path),
+                            encoding,
+                            &config,
+                        )
+                        .await;
                     }
                 }
             }
