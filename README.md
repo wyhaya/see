@@ -102,3 +102,11 @@ server {
 }
 ```
 
+---
+
+## TODO
+
+- [ ] Fix docker container (ubuntu, ca-certificates)
+- [ ] Fix the bug of matching https and http on the same port
+- [ ] Support global configuration
+- [ ] Support certificate with password
