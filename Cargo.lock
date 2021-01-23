@@ -809,7 +809,7 @@ dependencies = [
 
 [[package]]
 name = "see"
-version = "0.0.6"
+version = "0.0.7"
 dependencies = [
  "async-compression",
  "base64",

@@ -382,9 +382,9 @@ fn parse_directory(block: &Block) -> Setting<Directory> {
                     None
                 }
             } else {
-                // check
-                util::check_strftime(d.to_str()).unwrap_exit(d.line());
-                Some(d.to_str().to_string())
+                let format = d.to_source_str();
+                util::check_strftime(format).unwrap_exit(d.line());
+                Some(format.to_string())
             }
         }
         None => None,
