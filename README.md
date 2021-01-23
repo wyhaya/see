@@ -44,7 +44,7 @@ Also, you can use `see -c [FILE]` to specify a configuration file or just use
 the default one in `~/.see.conf`. Below, a simple configuration example to start
 the HTTPS server:
 
-```
+```sh
 server {
     listen 80
     root /root/www
@@ -89,7 +89,7 @@ docker pull wyhaya/see
 
 Add the following to `see.conf`:
 
-```
+```sh
 server {
     listen 80
     echo Hello, world!
@@ -112,7 +112,7 @@ more details.
 
 ---
 
-## TODO
+## ToDo
 
 - [ ] Fix docker container (ubuntu, ca-certificates);
 - [ ] Fix the bug of matching https and http on the same port;
