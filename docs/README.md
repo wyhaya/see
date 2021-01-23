@@ -4,7 +4,7 @@
 
 ```sh
 server {
-  listen 80  # 0.0.0.0:80
+  listen 80 # 0.0.0.0:80
   # or
   listen 80 8080
   # or
@@ -16,9 +16,9 @@ server {
 
 ```sh
 server {
-  host exmaple.com     # Domain name
+  host example.com    # Domain name
   # or
-  host *.exmaple.com   # Wildcard
+  host *.example.com  # Wildcard
 }
 ```
 
@@ -44,9 +44,10 @@ server {
 ```
 
 ## echo
+
 ```sh
 server {
-  echo Hello wrold
+  echo Hello world
   # or
   echo Hello, $`path`
 }
@@ -64,7 +65,7 @@ server {
 
 ```sh
 server {
-  rewrite /example     # Default 302
+  rewrite /example  # Default 302
   # or
   rewrite {
     location https://$`header_host`$`path`
@@ -90,31 +91,31 @@ server {
 ```
 
 ## compress
+
 ```sh
 server {
   compress on
   # or
   compress {
-    # optional value 'auto' 'gzip' 'deflate' 'br'
-    mode gzip 
-    # optional value 'default' 'fastest' 'best'
+    # Optional value: 'auto' 'gzip' 'deflate' 'br'
+    mode gzip
+    # Optional value: 'default' 'fastest' 'best'
     level default
-    # Which files are compressed, default: html css js json png
+    # Which files are compressed, default: 'html' 'css' 'js' 'json' 'png'
     extension css js
-  } 
+  }
   # or
   compress {
     # Set compression priority
-    mode br gzip auto     
+    mode br gzip auto
   }
 }
 ```
 
-
 ## index
 
-Index file, default: `index.html`
- 
+Index file, default: `index.html`.
+
 ```sh
 server {
   index index.html index.htm
@@ -134,7 +135,7 @@ server {
 
 ## method
 
-Method of allowing requests, default: `GET` `HEAD`
+Method of allowing requests, default: `GET` `HEAD`.
 
 ```sh
 server {
@@ -144,7 +145,7 @@ server {
 
 ## auth
 
-HTTP authentication
+HTTP authentication.
 
 ```sh
 server {
@@ -165,9 +166,9 @@ server {
 
 ## error
 
-Custom error page
+Custom error page.
 
-> If you use relative path, then you must set the `root` option
+> If you use relative path, then you must set the `root` option.
 
 ```sh
 server {
@@ -186,9 +187,9 @@ server {
 ```sh
 server {
   proxy {
-    url http://example.com # Proxy address
-    method GET             # Change the method of the proxy
-    header {               # Header in proxy request
+    url http://example.com  # Proxy address.
+    method GET              # Change the method of the proxy.
+    header {                # Header in proxy request.
       key value
     }
   }
@@ -218,7 +219,7 @@ server {
 
 ## ip
 
-Allow and deny clients from specified IP
+Allow and deny clients from specified IP(s).
 
 ```sh
 server {
@@ -231,12 +232,12 @@ server {
 
 ## Location
 
-#### Modifier
+### Modifier
 
-* `@` Matching with glob expression
-* `~` Matching using regular expression
-* `^` Matching the start of a location with a string
-* `$` Matching the end of a location with a string
+- `@` Matching with glob expression.
+- `~` Matching using regular expression.
+- `^` Matching the start of a location with a string.
+- `$` Matching the end of a location with a string.
 
 ```sh
 server {
@@ -263,7 +264,7 @@ server {
 
 ## Variable
 
-Built-in variables can be used in `echo` `rewrite` `header` `proxy`
+Built-in variables can be used in `echo`, `rewrite`, `header` and `proxy`.
 
 ```
 $`path`
@@ -279,5 +280,3 @@ server {
   echo Hello $`path`, $`header_host`
 }
 ```
-
----
