@@ -1,5 +1,3 @@
-
-
 FROM rust as builder
 WORKDIR /root
 COPY . /root
@@ -13,4 +11,3 @@ EXPOSE 80 443
 WORKDIR /
 COPY --from=builder /root/target/x86_64-unknown-linux-musl/release/see .
 CMD ["./see", "-c", "see.conf"]
-
