@@ -8,7 +8,7 @@ jobs:
     runs-on: ${{ matrix.job.os }}
     strategy:
       matrix:
-        job: 
+        job:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             publish: true
@@ -58,14 +58,14 @@ jobs:
           command: build
           args: --release --target=${{ matrix.job.target }}
 
-      # -------------- GitHub Relese --------------
+      # -------------- GitHub Release --------------
 
       - name: Package zip (unix)
         if: startsWith(github.ref, 'refs/tags/') && matrix.job.os != 'windows-latest'
         run: |
           cd ./target/${{ matrix.job.target }}/release/
           zip ${{ env.NAME }}-${{ matrix.job.target }}.zip ${{ env.NAME }}
-      
+
       - name: Package zip (windows)
         if: startsWith(github.ref, 'refs/tags/') && matrix.job.os == 'windows-latest'
         run: |
