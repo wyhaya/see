@@ -7,7 +7,8 @@
 
 ## Overview
 
-Simple and fast web server as a single executable with no extra dependencies required.
+Simple and fast web server as a single executable with no extra dependencies
+required.
 
 ## Features
 
@@ -106,8 +107,7 @@ lastly, open the link <http://localhost> and you should see `Hello, world!`.
 
 ## Licensing
 
-`see` is released under MIT license. Check the
-[LICENSE file](LICENSE) for
+`see` is released under MIT license. Check the [LICENSE file](LICENSE) for
 more details.
 
 ---

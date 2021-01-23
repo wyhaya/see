@@ -1,6 +1,6 @@
 [package]
 name = "see"
-version = "0.0.5"
+version = "0.0.6"
 authors = ["wyhaya <wyhaya@gmail.com>"]
 license = "MIT"
 description = "Simple and fast web server."
