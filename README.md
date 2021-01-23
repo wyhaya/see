@@ -1,89 +1,48 @@
+# `see`
 
-# see [![GitHub Workflow Status](https://img.shields.io/github/workflow/status/wyhaya/see/Build?style=flat-square)](https://github.com/wyhaya/see/actions) [![Crates.io](https://img.shields.io/crates/v/see.svg?style=flat-square)](https://crates.io/crates/see) [![LICENSE](https://img.shields.io/crates/l/see.svg?style=flat-square)](https://github.com/wyhaya/see/blob/master/LICENSE) [![Document](https://img.shields.io/badge/config-document-success.svg?style=flat-square)](./docs)
+[![GitHub Workflow Status](https://img.shields.io/github/workflow/status/wyhaya/see/Build?style=flat-square)](https://github.com/wyhaya/see/actions)
+[![Crates.io](https://img.shields.io/crates/v/see.svg?style=flat-square)](https://crates.io/crates/see)
+[![LICENSE](https://img.shields.io/crates/l/see.svg?style=flat-square)](LICENSE)
+[![Document](https://img.shields.io/badge/config-document-success.svg?style=flat-square)](docs/)
 
-A simple and fast web server
+## Overview
 
----
+Simple and fast web server as a single executable with no extra dependencies required.
 
 ## Features
 
-* Built on [tokio](https://github.com/tokio-rs/tokio) and [hyper](https://github.com/hyperium/hyper)
-* TLS verification based on [rustls](https://github.com/ctz/rustls)
-* Supports `HTTP/1` and `HTTP/2`
-* Content compression `auto` `gzip` `deflate` `br`
-* HTTP request proxy
-* ...
-
-## Install
-
-#### Binary
-
-[Download](https://github.com/wyhaya/see/releases) the binary from the release page
-
-#### Cargo
-
-```bash
-cargo install see
-# or
-cargo install --git https://github.com/wyhaya/see
-```
-
-#### Docker
-
-```bash
-docker pull wyhaya/see
-```
-
-<details>
-    <summary>Example</summary>
-
----
-Add the following to `see.conf`
-
-```
-server {
-    listen 80
-    echo Hello world
-}
-```
-
-```
-mkdir see && vim see/see.conf
-```
-
-Run container
-
-```bash
-docker run -idt --name see -p 80:80 -p 443:443 -v '$PWD'/see:/ wyhaya/see
-```
-
-Open [localhost](http://127.0.0.1) and you should see `hello world`
-
-</details>
+- Built with [Tokio](https://github.com/tokio-rs/tokio) and
+  [Hyper](https://github.com/hyperium/hyper);
+- TLS encryption through [Rustls](https://github.com/ctz/rustls);
+- `HTTP/1` and `HTTP/2` support;
+- Content compression `auto`, `gzip`, `deflate` or `br`;
+- Rewrite rules for redirection;
+- Allow/deny addresses allowing wildcards;
+- Location with [regex](https://en.wikipedia.org/wiki/Regular_expression)
+  matching;
+- Reverse proxy;
+- Basic authentication;
+- Error handling;
+- Customized logs;
+- And more...
 
 ## Usage
 
-Quick start in current directory
+Quick start in current directory:
 
 ```bash
 see start
 ```
 
-Use specified port and directory
+or specify the port and directory via parameters:
 
 ```bash
 see start -b 80 -p /root/www
 ```
 
-## Config
-
-You can use `see -c [FILE]` to specify the configuration file location
-
-The default configuration file is in `~/.see.conf` 
-
-[Documents](./docs/)
-
-#### A simple example: 
+Also, you can use `see -c [FILE]` to specify a configuration file or just use
+the default one in `~/.see.conf`. Below, a simple configuration example to start
+the HTTPS server:
 
 ```
 server {
@@ -102,11 +61,60 @@ server {
 }
 ```
 
+## Documentation
+
+The documentation is available at [docs/](docs/). Take a look at it to get more
+information about more configuration options.
+
+## Installation
+
+Download the compiled executable corresponding to your system from the
+[release page](https://github.com/wyhaya/see/releases).
+
+### Cargo
+
+```bash
+cargo install see
+# or
+cargo install --git https://github.com/wyhaya/see
+```
+
+### Docker
+
+```bash
+docker pull wyhaya/see
+```
+
+## Container
+
+Add the following to `see.conf`:
+
+```
+server {
+    listen 80
+    echo Hello, world!
+}
+```
+
+and run the container:
+
+```bash
+docker run -idt --name see -p 80:80 -p 443:443 -v '$PWD'/see:/ wyhaya/see
+```
+
+lastly, open the link <http://localhost> and you should see `Hello, world!`.
+
+## Licensing
+
+`see` is released under MIT license. Check the
+[LICENSE file](LICENSE) for
+more details.
+
 ---
 
 ## TODO
 
-- [ ] Fix docker container (ubuntu, ca-certificates)
-- [ ] Fix the bug of matching https and http on the same port
-- [ ] Support global configuration
-- [ ] Support certificate with password
+- [ ] Fix docker container (ubuntu, ca-certificates);
+- [ ] Fix the bug of matching https and http on the same port;
+- [ ] Support global configuration;
+- [ ] Support certificate with password.
