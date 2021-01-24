@@ -59,7 +59,6 @@ pub fn absolute_path<P: AsRef<Path>, R: AsRef<Path>>(path: P, root: R) -> PathBu
 }
 
 // Convert the string to the specified type
-
 pub fn to_glob(s: &str) -> Result<GlobMatcher, String> {
     Glob::new(s)
         .map(|g| g.compile_matcher())

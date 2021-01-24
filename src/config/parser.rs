@@ -350,7 +350,7 @@ fn parse_header(block: &Block) -> Setting<Headers> {
     let mut map = HashMap::new();
     for d in header {
         let header_name = util::to_header_name(d.name()).unwrap_exit(d.line());
-        let value = Var::from(d.to_multiple_str().join(" "));
+        let value = Var::from(d.to_source_str());
         let header_value = value.map_none(|s| util::to_header_value(&s).unwrap_exit(d.line()));
 
         map.insert(header_name, header_value);
