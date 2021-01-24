@@ -1,4 +1,4 @@
-use chrono::NaiveDateTime;
+use chrono::{Local, TimeZone};
 use futures_util::future::try_join_all;
 use std::path::PathBuf;
 use std::time::UNIX_EPOCH;
@@ -133,7 +133,7 @@ impl Directory {
                 .duration_since(UNIX_EPOCH)
                 .map_err(|_| ())?;
 
-            let datetime = NaiveDateTime::from_timestamp(dur.as_secs() as i64, dur.subsec_nanos());
+            let datetime = Local.timestamp(dur.as_secs() as i64, dur.subsec_nanos());
             content.push_str(&format!("<time>{}</time>", datetime.format(format)));
         }
 
