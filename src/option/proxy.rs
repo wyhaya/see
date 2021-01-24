@@ -1,7 +1,7 @@
 use crate::config::{Headers, Setting, SiteConfig, Var};
 use crate::{client, headers_merge, response_error_page};
 use hyper::header::ACCEPT_ENCODING;
-use hyper::{Body, Method, Request, Response, StatusCode, Uri};
+use hyper::{header::HOST, Body, Method, Request, Response, StatusCode, Uri};
 
 #[derive(Debug, Clone)]
 pub struct Proxy {
@@ -23,6 +23,9 @@ impl Proxy {
         if let Some(method) = self.method {
             *req.method_mut() = method;
         }
+
+        // Delete the host header, by default hyper will add the correct host
+        req.headers_mut().remove(HOST);
 
         // todo
         if let Setting::Value(headers) = self.headers {
