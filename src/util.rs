@@ -1,5 +1,4 @@
 use async_compression::Level;
-use chrono::{NaiveDateTime, Utc};
 use globset::{Glob, GlobMatcher};
 use hyper::header::{HeaderName, HeaderValue};
 use hyper::{Method, StatusCode, Uri};
@@ -8,6 +7,7 @@ use std::env;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
+use time::util::validate_format_string;
 use tokio::fs;
 
 // Encountered a fatal error
@@ -131,9 +131,7 @@ pub fn to_compress_level(s: &str) -> Result<Level, String> {
 }
 
 pub fn check_strftime(s: &str) -> Result<(), String> {
-    NaiveDateTime::parse_from_str(Utc::now().format(s).to_string().as_str(), s)
-        .map(|_| ())
-        .map_err(|err| format!("Cannot parse `{}` to time format\n{}", s, err))
+    validate_format_string(s).map_err(|err| format!("Cannot parse `{}` to time format\n{}", s, err))
 }
 
 #[test]

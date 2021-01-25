@@ -1,7 +1,8 @@
-use chrono::{Local, TimeZone};
 use futures_util::future::try_join_all;
+use lazy_static::lazy_static;
 use std::path::PathBuf;
-use std::time::UNIX_EPOCH;
+use std::time::{Duration, UNIX_EPOCH};
+use time::{OffsetDateTime, UtcOffset};
 use tokio::fs::{self, DirEntry};
 
 // HTML directory template
@@ -133,8 +134,8 @@ impl Directory {
                 .duration_since(UNIX_EPOCH)
                 .map_err(|_| ())?;
 
-            let datetime = Local.timestamp(dur.as_secs() as i64, dur.subsec_nanos());
-            content.push_str(&format!("<time>{}</time>", datetime.format(format)));
+            let s = format!("<time>{}</time>", format_datetime(dur, format));
+            content.push_str(&s);
         }
 
         if size {
@@ -147,6 +148,14 @@ impl Directory {
 
         Ok(content)
     }
+}
+
+fn format_datetime(dur: Duration, format: &str) -> String {
+    lazy_static! {
+        static ref UTC_OFFSET: UtcOffset = UtcOffset::try_current_local_offset().unwrap();
+    }
+    let datetime = OffsetDateTime::from_unix_timestamp(dur.as_secs() as i64).to_offset(*UTC_OFFSET);
+    datetime.format(format)
 }
 
 fn format_size(n: u64) -> String {
