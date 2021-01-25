@@ -1,4 +1,5 @@
 use async_compression::Level;
+use chrono::{NaiveDateTime, Utc};
 use globset::{Glob, GlobMatcher};
 use hyper::header::{HeaderName, HeaderValue};
 use hyper::{Method, StatusCode, Uri};
@@ -58,7 +59,6 @@ pub fn absolute_path<P: AsRef<Path>, R: AsRef<Path>>(path: P, root: R) -> PathBu
 }
 
 // Convert the string to the specified type
-
 pub fn to_glob(s: &str) -> Result<GlobMatcher, String> {
     Glob::new(s)
         .map(|g| g.compile_matcher())
@@ -131,8 +131,7 @@ pub fn to_compress_level(s: &str) -> Result<Level, String> {
 }
 
 pub fn check_strftime(s: &str) -> Result<(), String> {
-    time::now()
-        .strftime(s)
+    NaiveDateTime::parse_from_str(Utc::now().format(s).to_string().as_str(), s)
         .map(|_| ())
         .map_err(|err| format!("Cannot parse `{}` to time format\n{}", s, err))
 }

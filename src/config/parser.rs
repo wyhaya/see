@@ -350,7 +350,7 @@ fn parse_header(block: &Block) -> Setting<Headers> {
     let mut map = HashMap::new();
     for d in header {
         let header_name = util::to_header_name(d.name()).unwrap_exit(d.line());
-        let value = Var::from(d.to_str());
+        let value = Var::from(d.to_source_str());
         let header_value = value.map_none(|s| util::to_header_value(&s).unwrap_exit(d.line()));
 
         map.insert(header_name, header_value);
@@ -382,9 +382,9 @@ fn parse_directory(block: &Block) -> Setting<Directory> {
                     None
                 }
             } else {
-                // check
-                util::check_strftime(d.to_str()).unwrap_exit(d.line());
-                Some(d.to_str().to_string())
+                let format = d.to_source_str();
+                util::check_strftime(format).unwrap_exit(d.line());
+                Some(format.to_string())
             }
         }
         None => None,

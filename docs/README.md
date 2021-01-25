@@ -81,7 +81,7 @@ server {
   directory on | off | [option]
   # Display creation time
   directory {
-    time on | off | "%Y-%m-%d %H:%M"
+    time on | off | %Y-%m-%d %H:%M
   }
   # Display file size
   directory {

@@ -1,7 +1,7 @@
+use chrono::{Local, TimeZone};
 use futures_util::future::try_join_all;
 use std::path::PathBuf;
 use std::time::UNIX_EPOCH;
-use time::Timespec;
 use tokio::fs::{self, DirEntry};
 
 // HTML directory template
@@ -132,12 +132,9 @@ impl Directory {
                 .map_err(|_| ())?
                 .duration_since(UNIX_EPOCH)
                 .map_err(|_| ())?;
-            let spec = Timespec::new(dur.as_secs() as i64, dur.subsec_nanos() as i32);
 
-            content.push_str(&format!(
-                "<time>{}</time>",
-                time::at(spec).strftime(format).unwrap()
-            ));
+            let datetime = Local.timestamp(dur.as_secs() as i64, dur.subsec_nanos());
+            content.push_str(&format!("<time>{}</time>", datetime.format(format)));
         }
 
         if size {

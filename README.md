@@ -7,24 +7,25 @@
 
 ## Overview
 
-Simple and fast web server as a single executable with no extra dependencies required.
+Simple and fast web server as a single executable with no extra dependencies
+required.
 
 ## Features
 
 - Built with [Tokio](https://github.com/tokio-rs/tokio) and
-  [Hyper](https://github.com/hyperium/hyper);
-- TLS encryption through [Rustls](https://github.com/ctz/rustls);
-- `HTTP/1` and `HTTP/2` support;
-- Content compression `auto`, `gzip`, `deflate` or `br`;
-- Rewrite rules for redirection;
-- Allow/deny addresses allowing wildcards;
+  [Hyper](https://github.com/hyperium/hyper).
+- TLS encryption through [Rustls](https://github.com/ctz/rustls).
+- `HTTP/1` and `HTTP/2` support.
+- Content compression `auto`, `gzip`, `deflate` or `br`.
+- Rewrite rules for redirection.
+- Allow/deny addresses allowing wildcards.
 - Location with [regex](https://en.wikipedia.org/wiki/Regular_expression)
-  matching;
-- Reverse proxy;
-- Basic authentication;
-- Error handling;
-- Customized logs;
-- And more...
+  matching.
+- Reverse proxy.
+- Basic authentication.
+- Error handling.
+- Customized logs.
+- And more.
 
 ## Usage
 
@@ -106,8 +107,7 @@ lastly, open the link <http://localhost> and you should see `Hello, world!`.
 
 ## Licensing
 
-`see` is released under MIT license. Check the
-[LICENSE file](LICENSE) for
+`see` is released under MIT license. Check the [LICENSE file](LICENSE) for
 more details.
 
 ---
