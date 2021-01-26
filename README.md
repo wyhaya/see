@@ -1,4 +1,4 @@
-# `see`
+# see
 
 [![GitHub Workflow Status](https://img.shields.io/github/workflow/status/wyhaya/see/Build?style=flat-square)](https://github.com/wyhaya/see/actions)
 [![Crates.io](https://img.shields.io/crates/v/see.svg?style=flat-square)](https://crates.io/crates/see)
@@ -13,19 +13,19 @@ required.
 ## Features
 
 - Built with [Tokio](https://github.com/tokio-rs/tokio) and
-  [Hyper](https://github.com/hyperium/hyper).
-- TLS encryption through [Rustls](https://github.com/ctz/rustls).
-- `HTTP/1` and `HTTP/2` support.
-- Content compression `auto`, `gzip`, `deflate` or `br`.
-- Rewrite rules for redirection.
-- Allow/deny addresses allowing wildcards.
+  [Hyper](https://github.com/hyperium/hyper)
+- TLS encryption through [Rustls](https://github.com/ctz/rustls)
+- `HTTP/1` and `HTTP/2` support
+- Content compression `auto`, `gzip`, `deflate` or `br`
+- Rewrite rules for redirection
+- Allow/deny addresses allowing wildcards
 - Location with [regex](https://en.wikipedia.org/wiki/Regular_expression)
-  matching.
-- Reverse proxy.
-- Basic authentication.
-- Error handling.
-- Customized logs.
-- And more.
+  matching
+- Reverse proxy
+- Basic authentication
+- Error handling
+- Customized logs
+- And more
 
 ## Usage
 
@@ -86,7 +86,7 @@ cargo install --git https://github.com/wyhaya/see
 docker pull wyhaya/see
 ```
 
-## Container
+#### Container
 
 Add the following to `see.conf`:
 
@@ -107,7 +107,7 @@ lastly, open the link <http://localhost> and you should see `Hello, world!`.
 
 ## Licensing
 
-`see` is released under MIT license. Check the [LICENSE file](LICENSE) for
+`see` is released under MIT license. Check the [LICENSE](LICENSE) file for
 more details.
 
 ---

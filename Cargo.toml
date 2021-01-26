@@ -1,9 +1,9 @@
 [package]
 name = "see"
-version = "0.0.8"
+version = "0.0.6"
 authors = ["wyhaya <wyhaya@gmail.com>"]
 license = "MIT"
-description = "Simple and fast web server."
+description = "Simple and fast web server"
 homepage = "https://github.com/wyhaya/see"
 repository = "https://github.com/wyhaya/see.git"
 readme = "README.md"
