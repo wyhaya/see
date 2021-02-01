@@ -1,30 +1,26 @@
-use crate::config::ServerConfig;
-use crate::connect;
+use crate::{config::ServerConfig, connect};
 use futures_util::ready;
 use futures_util::stream::{Stream, StreamExt};
-use hyper::server::accept::from_stream;
-use hyper::server::conn::Http;
-use hyper::server::Builder;
+use hyper::server::{accept::from_stream, conn::Http, Builder};
 use hyper::service::{make_service_fn, service_fn};
 use std::convert::Infallible;
 use std::net::IpAddr;
 use std::pin::Pin;
 use std::sync::Arc;
-use std::task::Context;
-use std::task::Poll;
-use tokio::io::{self, AsyncRead, AsyncWrite, ReadBuf};
+use std::task::{Context, Poll};
+use tokio::io::{AsyncRead, AsyncWrite, ReadBuf, Result};
 use tokio::net::{TcpListener, TcpStream};
 use tokio_rustls::server::TlsStream;
 
 pub async fn run(tcp: TcpListener, config: ServerConfig) {
     let config = Arc::new(config);
 
-    let stream = AcceptStream::new(tcp).filter_map(|rst| {
+    let stream = AcceptTcpStream::new(tcp).filter_map(|rst| {
         let config = config.clone();
-
         async move {
             let (stream, ip) = match rst {
-                Ok((stream, ip)) => (stream, ip),
+                Ok(val) => val,
+                // Failed to receive request
                 Err(_) => return None,
             };
 
@@ -37,6 +33,8 @@ pub async fn run(tcp: TcpListener, config: ServerConfig) {
                 };
 
                 let (_, session) = stream.get_ref();
+                // TODO
+                // Matching certificate
                 let hostname = match session.get_sni_hostname() {
                     Some(name) => name,
                     None => return None,
@@ -48,32 +46,28 @@ pub async fn run(tcp: TcpListener, config: ServerConfig) {
                     .position(|site| site.host.is_match(hostname))
                     .unwrap();
 
-                return Some(Ok::<_, hyper::Error>(Connect::TlsStream(stream, ip, i)));
+                return Some(Ok::<_, hyper::Error>(HttpConnect::TlsStream(stream, ip, i)));
             }
 
             // HTTP
-            Some(Ok::<_, hyper::Error>(Connect::Stream(stream, ip)))
+            Some(Ok::<_, hyper::Error>(HttpConnect::Stream(stream, ip)))
         }
     });
 
-    let service = make_service_fn(|req: &Connect| {
+    let service = make_service_fn(|req: &HttpConnect| {
         let config = config.clone();
-
-        let (ip, site_position) = match req {
-            Connect::Stream(_, ip) => (*ip, None),
-            Connect::TlsStream(_, ip, i) => (*ip, Some(*i)),
+        let (remote, site_position) = match req {
+            HttpConnect::Stream(_, ip) => (*ip, None),
+            HttpConnect::TlsStream(_, ip, i) => (*ip, Some(*i)),
         };
-
         async move {
             let service = service_fn(move |req| {
                 let sites = match site_position {
                     Some(i) => vec![config.sites[i].clone()],
                     None => config.sites.clone(),
                 };
-
-                connect(req, ip, sites)
+                connect(req, remote, sites)
             });
-
             Ok::<_, Infallible>(service)
         }
     });
@@ -84,69 +78,64 @@ pub async fn run(tcp: TcpListener, config: ServerConfig) {
 }
 
 // Accept stream and remote ip from TcpListener
-struct AcceptStream {
+struct AcceptTcpStream {
     listener: TcpListener,
 }
 
-impl AcceptStream {
+impl AcceptTcpStream {
     fn new(tcp: TcpListener) -> Self {
         Self { listener: tcp }
     }
 }
 
-impl Stream for AcceptStream {
-    type Item = io::Result<(TcpStream, IpAddr)>;
+impl Stream for AcceptTcpStream {
+    type Item = Result<(TcpStream, IpAddr)>;
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let poll = self.get_mut().listener.poll_accept(cx);
+        let poll = self.listener.poll_accept(cx);
         let rst = ready!(poll);
         let item = rst.map(|(stream, addr)| (stream, addr.ip()));
-
         Poll::Ready(Some(item))
     }
 }
 
 // Distinguish between http and https
-pub enum Connect {
+pub enum HttpConnect {
     Stream(TcpStream, IpAddr),
     TlsStream(TlsStream<TcpStream>, IpAddr, usize),
 }
 
-impl AsyncRead for Connect {
+impl AsyncRead for HttpConnect {
     fn poll_read(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
         buf: &mut ReadBuf<'_>,
-    ) -> Poll<io::Result<()>> {
+    ) -> Poll<Result<()>> {
         match self.get_mut() {
-            Connect::Stream(stream, _) => Pin::new(stream).poll_read(cx, buf),
-            Connect::TlsStream(stream, _, _) => Pin::new(stream).poll_read(cx, buf),
+            Self::Stream(stream, _) => Pin::new(stream).poll_read(cx, buf),
+            Self::TlsStream(stream, _, _) => Pin::new(stream).poll_read(cx, buf),
         }
     }
 }
 
-impl AsyncWrite for Connect {
-    fn poll_write(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &[u8],
-    ) -> Poll<io::Result<usize>> {
+impl AsyncWrite for HttpConnect {
+    fn poll_write(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<Result<usize>> {
         match self.get_mut() {
-            Connect::Stream(stream, _) => Pin::new(stream).poll_write(cx, buf),
-            Connect::TlsStream(stream, _, _) => Pin::new(stream).poll_write(cx, buf),
+            Self::Stream(stream, _) => Pin::new(stream).poll_write(cx, buf),
+            Self::TlsStream(stream, _, _) => Pin::new(stream).poll_write(cx, buf),
         }
     }
 
-    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<()>> {
         match self.get_mut() {
-            Connect::Stream(stream, _) => Pin::new(stream).poll_flush(cx),
-            Connect::TlsStream(stream, _, _) => Pin::new(stream).poll_flush(cx),
+            Self::Stream(stream, _) => Pin::new(stream).poll_flush(cx),
+            Self::TlsStream(stream, _, _) => Pin::new(stream).poll_flush(cx),
         }
     }
 
-    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<()>> {
         match self.get_mut() {
-            Connect::Stream(stream, _) => Pin::new(stream).poll_shutdown(cx),
-            Connect::TlsStream(stream, _, _) => Pin::new(stream).poll_shutdown(cx),
+            Self::Stream(stream, _) => Pin::new(stream).poll_shutdown(cx),
+            Self::TlsStream(stream, _, _) => Pin::new(stream).poll_shutdown(cx),
         }
     }
 }
