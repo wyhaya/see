@@ -85,6 +85,7 @@ impl Replace {
         if replace.path
             || replace.query
             || replace.method
+            || replace.version
             || replace.query_key
             || replace.header_key
         {
