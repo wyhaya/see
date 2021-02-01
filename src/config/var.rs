@@ -129,7 +129,8 @@ impl Replace {
 
         if self.time {
             // todo format, e.g:
-            // $`time` %Y-%m-%d %H:%M:%S
+            // $`time` - Default formation from time-rs
+            // $`time_%Y-%m-%d %H:%M:%S` -> User formation
             let datetime = OffsetDateTime::try_now_local();
             let to = match datetime {
                 Ok(dt) => dt.to_string(),
