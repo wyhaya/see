@@ -114,8 +114,8 @@ more details.
 
 ## ToDo
 
-- [ ] Fix docker container (ubuntu, ca-certificates);
-- [ ] Fix the bug of matching https and http on the same port;
-- [ ] Support global configuration;
-- [ ] Support certificate with password;
-- [ ] Daemon for Unix systems and service for Windows.
+- [ ] Fix docker container (ubuntu, ca-certificates)
+- [ ] Fix the bug of matching https and http on the same port
+- [ ] Support global configuration
+- [ ] Support certificate with password
+- [ ] Daemon for Unix systems and service for Windows

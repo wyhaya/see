@@ -1,11 +1,14 @@
 use hyper::{Body, Request, Uri};
 use lazy_static::lazy_static;
 use regex::Regex;
+use time::OffsetDateTime;
 
 const REQUEST_PATH: &str = "$`path`";
 const REQUEST_QUERY: &str = "$`query`";
 const REQUEST_METHOD: &str = "$`method`";
 const REQUEST_VERSION: &str = "$`version`";
+
+const SERVER_TIME: &str = "$`time`";
 
 const REQUEST_QUERY_KEY: &str = "query_";
 const REQUEST_HEADER_KEY: &str = "header_";
@@ -53,6 +56,7 @@ pub struct Replace {
     query: bool,
     method: bool,
     version: bool,
+    time: bool,
     query_key: bool,
     header_key: bool,
 }
@@ -75,6 +79,9 @@ impl Replace {
         if text.contains(REQUEST_VERSION) {
             replace.version = true;
         }
+        if text.contains(SERVER_TIME) {
+            replace.time = true;
+        }
         if query.is_match(text) {
             replace.query_key = true;
         }
@@ -86,6 +93,7 @@ impl Replace {
             || replace.query
             || replace.method
             || replace.version
+            || replace.time
             || replace.query_key
             || replace.header_key
         {
@@ -117,6 +125,13 @@ impl Replace {
 
         if self.version {
             source = source.replace(REQUEST_VERSION, &format!("{:?}", req.version()));
+        }
+
+        if self.time {
+            // todo format, e.g:
+            // $`time` %Y-%m-%d %H:%M:%S
+            let datetime = OffsetDateTime::try_now_local().unwrap();
+            source = source.replace(SERVER_TIME, datetime.to_string().as_str());
         }
 
         if self.query_key {
