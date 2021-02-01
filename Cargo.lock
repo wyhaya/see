@@ -833,7 +833,6 @@ dependencies = [
  "hyper-rustls",
  "lazy_static",
  "mime_guess",
- "num_cpus",
  "percent-encoding",
  "regex",
  "time",
