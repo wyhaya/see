@@ -130,8 +130,12 @@ impl Replace {
         if self.time {
             // todo format, e.g:
             // $`time` %Y-%m-%d %H:%M:%S
-            let datetime = OffsetDateTime::try_now_local().unwrap();
-            source = source.replace(SERVER_TIME, datetime.to_string().as_str());
+            let datetime = OffsetDateTime::try_now_local();
+            let to = match datetime {
+                Ok(dt) => dt.to_string(),
+                Err(e) => e.to_string(),
+            };
+            source = source.replace(SERVER_TIME, to.as_str());
         }
 
         if self.query_key {
