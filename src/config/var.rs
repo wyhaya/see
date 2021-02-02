@@ -127,16 +127,18 @@ impl Replace {
             source = source.replace(REQUEST_VERSION, &format!("{:?}", req.version()));
         }
 
+        // TODO:
+        // Needs to be redesigned
+        // $`time_year` $`time_month` ...
         if self.time {
-            // todo format, e.g:
-            // $`time` - Default formation from time-rs
-            // $`time_%Y-%m-%d %H:%M:%S` -> User formation
-            let datetime = OffsetDateTime::try_now_local();
-            let to = match datetime {
-                Ok(dt) => dt.to_string(),
-                Err(e) => e.to_string(),
+            match OffsetDateTime::try_now_local() {
+                Ok(dt) => {
+                    source = source.replace(SERVER_TIME, &dt.unix_timestamp().to_string());
+                }
+                Err(_) => {
+                    source = source.replace(SERVER_TIME, "");
+                }
             };
-            source = source.replace(SERVER_TIME, to.as_str());
         }
 
         if self.query_key {
