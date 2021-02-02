@@ -30,8 +30,6 @@ fn main() {
     runtime::Builder::new_multi_thread()
         .thread_name(default::SERVER_NAME)
         .enable_all()
-        .worker_threads(num_cpus::get())
-        .max_blocking_threads(num_cpus::get() + 1)
         .build()
         .unwrap_or_else(|err| exit!("Cannot create async runtime\n{:?}", err))
         .block_on(async_main());

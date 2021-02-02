@@ -271,6 +271,7 @@ $`path`
 $`query`
 $`method`
 $`version`
+$`time`
 $`query_NAME`
 $`header_NAME`
 ```
