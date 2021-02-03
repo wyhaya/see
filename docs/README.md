@@ -37,9 +37,10 @@ server {
 ```sh
 server {
   host example.com
-  https
+  https {
     key  /root/ssl.key
     cert /root/ssl.pem
+  }
 }
 ```
 
