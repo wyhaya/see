@@ -2,7 +2,6 @@ use futures_util::future::try_join_all;
 use lazy_static::lazy_static;
 use std::path::PathBuf;
 use std::time::{Duration, UNIX_EPOCH};
-use time::error::IndeterminateOffset;
 use time::{OffsetDateTime, UtcOffset};
 use tokio::fs::{self, DirEntry};
 
@@ -153,17 +152,10 @@ impl Directory {
 
 fn format_datetime(dur: Duration, format: &str) -> String {
     lazy_static! {
-        static ref UTC_OFFSET_RES: Result<UtcOffset, IndeterminateOffset> =
-            UtcOffset::try_current_local_offset();
+        static ref UTC_OFFSET: UtcOffset = UtcOffset::try_current_local_offset().unwrap();
     }
-    match *UTC_OFFSET_RES {
-        Ok(utc_offset) => {
-            let datetime =
-                OffsetDateTime::from_unix_timestamp(dur.as_secs() as i64).to_offset(utc_offset);
-            datetime.format(format)
-        }
-        _ => "".to_string(),
-    }
+    let datetime = OffsetDateTime::from_unix_timestamp(dur.as_secs() as i64).to_offset(*UTC_OFFSET);
+    datetime.format(format)
 }
 
 fn format_size(n: u64) -> String {

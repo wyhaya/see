@@ -133,7 +133,7 @@ impl Replace {
         if self.time {
             match OffsetDateTime::try_now_local() {
                 Ok(dt) => {
-                    source = source.replace(SERVER_TIME, &dt.unix_timestamp().to_string());
+                    source = source.replace(SERVER_TIME, &dt.timestamp().to_string());
                 }
                 Err(_) => {
                     source = source.replace(SERVER_TIME, "");
