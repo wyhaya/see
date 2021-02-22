@@ -1,6 +1,6 @@
 [package]
 name = "see"
-version = "0.0.6"
+version = "0.0.7"
 authors = ["wyhaya <wyhaya@gmail.com>"]
 license = "MIT"
 description = "Simple and fast web server"
@@ -21,13 +21,13 @@ clap = { version = "2.33.3", default-features = false }
 dirs = "3.0.1"
 futures-util = { version = "0.3.12", default-features = false, features = ["std"] }
 globset = "0.4.6"
-hyper = { version = "0.14.2", features = ["full"] }
+hyper = { version = "0.14.4", features = ["full"] }
 hyper-rustls = "0.22.1"
 lazy_static = "1.4.0"
 mime_guess = "2.0.3"
 percent-encoding = "2.1.0"
 regex = "1.4.3"
 time = "=0.2.22" # TODO
-tokio = { version = "1.1.1", features = ["fs", "rt-multi-thread", "macros", "io-std"] }
+tokio = { version = "1.2.0", features = ["fs", "rt-multi-thread", "macros", "io-std"] }
 tokio-rustls = "0.22.0"
 tokio-util = { version = "0.6.3", default-features = false, features = ["codec"] }
