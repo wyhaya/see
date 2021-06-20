@@ -95,5 +95,5 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/') && matrix.job.publish
         run: |
           docker build . -t wyhaya/see
-          docker login -u wyhaya -p ${{ secrets.DOCKER_PASSWORD }}
+          docker login -u wyhaya -p ${{ secrets.DOCKER_TOKEN }}
           docker push wyhaya/see
