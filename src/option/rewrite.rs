@@ -22,7 +22,7 @@ impl Rewrite {
 
     pub fn response(self, req: &Request<Body>) -> Response<Body> {
         let value = self.location.map(|s, r| {
-            let rst = r.replace(s, &req);
+            let rst = r.replace(s, req);
             HeaderValue::from_str(&rst).unwrap()
         });
 
@@ -31,9 +31,9 @@ impl Rewrite {
             RewriteStatus::_302 => StatusCode::FOUND,
         };
 
-        return Response::new(Body::empty())
+        Response::new(Body::empty())
             .status(status)
-            .header(LOCATION, value);
+            .header(LOCATION, value)
     }
 }
 

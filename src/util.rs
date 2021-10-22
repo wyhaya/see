@@ -35,13 +35,13 @@ pub fn home_dir() -> PathBuf {
 }
 
 // Get the file extension from PathBuf
-pub fn get_extension(path: &PathBuf) -> Option<&str> {
+pub fn get_extension(path: &Path) -> Option<&str> {
     path.extension()
         .map(|ext| ext.to_str())
         .unwrap_or_else(|| Some(""))
 }
 
-pub async fn is_file(path: &PathBuf) -> bool {
+pub async fn is_file(path: &Path) -> bool {
     fs::metadata(path)
         .await
         .map(|meta| meta.is_file())

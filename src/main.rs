@@ -21,7 +21,7 @@ use hyper::header::{
 use hyper::Result as HyperResult;
 use hyper::{Body, HeaderMap, Request, Response, StatusCode, Version};
 use std::net::IpAddr;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use tokio::fs::{self, File};
 use tokio::net::TcpListener;
 use tokio::runtime;
@@ -86,7 +86,7 @@ fn get_match_config(
     match req.version() {
         Version::HTTP_2 => {
             // todo
-            return Ok(Some(configs[0].clone()));
+            Ok(Some(configs[0].clone()))
         }
         Version::HTTP_11 => {
             let host = match req.headers().get(HOST) {
@@ -259,9 +259,9 @@ async fn handle(
                 None => format!("{}/", &req_path),
             };
 
-            return Response::new(Body::empty())
+            Response::new(Body::empty())
                 .status(StatusCode::MOVED_PERMANENTLY)
-                .header(LOCATION, HeaderValue::from_str(&location).unwrap());
+                .header(LOCATION, HeaderValue::from_str(&location).unwrap())
         }
 
         FileRoute::Directory => {
@@ -327,7 +327,7 @@ async fn handle(
 pub fn headers_merge(headers: &mut HeaderMap, new_headers: Headers, req: &Request<Body>) {
     for (name, value) in new_headers {
         let val = value.map(|s, r| {
-            let v = r.replace(s, &req);
+            let v = r.replace(s, req);
             HeaderValue::from_str(&v).unwrap()
         });
         headers.insert(name, val);
@@ -347,9 +347,9 @@ pub async fn response_error_page(
                         return response_file(
                             status,
                             f,
-                            util::get_extension(&path),
+                            util::get_extension(path),
                             encoding,
-                            &config,
+                            config,
                         )
                         .await;
                     }
@@ -364,7 +364,7 @@ pub async fn response_error_page(
 async fn response_html(html: String, req: &Request<Body>, config: &SiteConfig) -> Response<Body> {
     let encoding = match &config.compress {
         Setting::Value(compress) => match req.headers().get(ACCEPT_ENCODING) {
-            Some(header) => compress.get_compress_mode(&header, "html"),
+            Some(header) => compress.get_compress_mode(header, "html"),
             None => None,
         },
         _ => None,
@@ -391,7 +391,7 @@ async fn response_file(
         Setting::Value(compress) => ext
             .map(|ext| {
                 header
-                    .map(|header| compress.get_compress_mode(&header, ext))
+                    .map(|header| compress.get_compress_mode(header, ext))
                     .unwrap_or_default()
             })
             .unwrap_or_default(),
@@ -414,7 +414,7 @@ async fn response_file(
         .header(header.0, header.1)
 }
 
-async fn try_files(_: &PathBuf, _: &Vec<Var<String>>, _: &Request<Body>) -> Option<(File, String)> {
+async fn try_files(_: &Path, _: &[Var<String>], _: &Request<Body>) -> Option<(File, String)> {
     todo!();
 }
 
@@ -450,7 +450,7 @@ enum FileRoute {
 }
 
 impl FileRoute {
-    async fn new(path: &PathBuf, req_path: &str) -> Self {
+    async fn new(path: &Path, req_path: &str) -> Self {
         match fs::metadata(path).await {
             Ok(meta) => {
                 if meta.is_dir() {

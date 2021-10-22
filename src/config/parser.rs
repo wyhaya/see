@@ -139,7 +139,7 @@ async fn parse_location<P: AsRef<Path>>(
     if locations.is_empty() {
         return vec![];
     }
-    let root = match parse_root(&block, config_dir.as_ref()) {
+    let root = match parse_root(block, config_dir.as_ref()) {
         Some(p) => Some(p),
         None => parent_root.clone(),
     };
@@ -233,7 +233,7 @@ fn parse_try(block: &Block) -> Setting<Vec<Var<String>>> {
     let vec = block["try"]
         .to_multiple_str()
         .iter()
-        .map(|s| Var::from(s))
+        .map(Var::from)
         .collect::<Vec<Var<String>>>();
 
     Setting::Value(vec)
@@ -308,9 +308,7 @@ fn parse_ip(block: &Block) -> Setting<IpMatcher> {
 }
 
 fn parse_root<P: AsRef<Path>>(block: &Block, config_dir: P) -> Option<PathBuf> {
-    if block.get("root").is_none() {
-        return None;
-    }
+    block.get("root")?;
     let path = absolute_path(block["root"].to_str(), config_dir);
     Some(path)
 }
@@ -466,9 +464,7 @@ fn parse_compress(block: &Block) -> Setting<Compress> {
 
 // todo
 fn parse_https(block: &Block, config_dir: &Path, hostname: Vec<&String>) -> Option<TLSContent> {
-    if block.get("https").is_none() {
-        return None;
-    }
+    block.get("https")?;
     let https = block["https"].to_block();
     https.check(&["cert", "key"], &["cert", "key"], &[]);
 
@@ -529,7 +525,7 @@ fn parse_error(block: &Block, root: &Option<PathBuf>) -> ErrorPage {
     let mut pages = HashMap::new();
     for d in error.directives() {
         let status = util::to_status_code(d.name()).unwrap_exit(d.line());
-        let val = parse_error_value(&block, d.name());
+        let val = parse_error_value(block, d.name());
         match val {
             Setting::Value(s) => {
                 let p = PathBuf::from(&s);

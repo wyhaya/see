@@ -42,7 +42,7 @@ impl Proxy {
                 } else {
                     StatusCode::BAD_GATEWAY
                 };
-                response_error_page(encoding.as_ref(), &config, status).await
+                response_error_page(encoding.as_ref(), config, status).await
             }
         }
     }

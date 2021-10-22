@@ -71,7 +71,8 @@ impl FromStr for Block {
 impl Index<&str> for Block {
     type Output = Directive;
     fn index(&self, name: &str) -> &Self::Output {
-        self.get(name).expect(&format!("'{}' doesn't exist", name))
+        self.get(name)
+            .unwrap_or_else(|| panic!("'{}' doesn't exist", name))
     }
 }
 

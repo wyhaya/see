@@ -1,6 +1,6 @@
 use futures_util::future::try_join_all;
 use lazy_static::lazy_static;
-use std::path::PathBuf;
+use std::path::Path;
 use std::time::{Duration, UNIX_EPOCH};
 use time::{OffsetDateTime, UtcOffset};
 use tokio::fs::{self, DirEntry};
@@ -74,7 +74,7 @@ pub struct Directory {
 }
 
 impl Directory {
-    pub async fn render(&self, dir: &PathBuf, title: &str) -> Result<String, ()> {
+    pub async fn render(&self, dir: &Path, title: &str) -> Result<String, ()> {
         let mut dir = fs::read_dir(dir).await.map_err(|_| ())?;
         let mut fus = vec![];
 
