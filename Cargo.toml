@@ -1,6 +1,6 @@
 [package]
 name = "see"
-version = "0.0.7"
+version = "0.0.8"
 authors = ["wyhaya <wyhaya@gmail.com>"]
 license = "MIT"
 description = "Simple and fast web server"
@@ -16,19 +16,19 @@ codegen-units = 1
 strip = "symbols"
 
 [dependencies]
-async-compression = { version = "0.3.7", features = ["tokio", "gzip", "deflate", "brotli"] }
+async-compression = { version = "0.3.12", features = ["tokio", "gzip", "deflate", "brotli"] }
 base64 = "0.13.0"
 clap = { version = "2.33.3", default-features = false }
-dirs = "3.0.1"
+dirs = "4.0.0"
 futures-util = { version = "0.3.12", default-features = false, features = ["std"] }
-globset = "0.4.6"
-hyper = { version = "0.14.4", features = ["full"] }
-hyper-rustls = "0.22.1"
+globset = "0.4.8"
+hyper = { version = "0.14.18", features = ["full"] }
+hyper-rustls = { version = "0.23.0", features = ["http1", "http2", "native-tokio", "tls12"] }
 lazy_static = "1.4.0"
-mime_guess = "2.0.3"
+mime_guess = "2.0.4"
 percent-encoding = "2.1.0"
-regex = "1.4.3"
+regex = "1.5.5"
 time = "=0.2.22" # TODO
-tokio = { version = "1.2.0", features = ["fs", "rt-multi-thread", "macros", "io-std"] }
+tokio = { version = "1.18.2", features = ["rt-multi-thread", "macros", "io-std", "fs"] }
 tokio-rustls = "0.22.0"
-tokio-util = { version = "0.6.3", default-features = false, features = ["codec"] }
+tokio-util = { version = "0.7.1", default-features = false, features = ["codec"] }

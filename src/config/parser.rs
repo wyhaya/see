@@ -487,7 +487,7 @@ async fn parse_log<P: AsRef<Path>>(block: &Block, root: P) -> Setting<Logger> {
 
     if block["log"].is_string() {
         let path = absolute_path(block["log"].to_str(), root);
-        let logger = Logger::new(default::LOG_FORMAT.to_string())
+        let logger = Logger::new(default::LOG_FORMAT)
             .file(path)
             .await
             .unwrap_or_else(|err| exit!("Init logger failed:\n{:?}", err));
