@@ -1,4 +1,4 @@
-name: CICD
+name: Build
 
 on: [push, pull_request]
 
@@ -8,14 +8,33 @@ jobs:
     runs-on: ${{ matrix.job.os }}
     strategy:
       matrix:
-        job:
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
+        job: 
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            cross: false
             publish: true
-          - os: macos-latest
-            target: x86_64-apple-darwin
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+            cross: true
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            cross: true
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-latest
+            cross: true
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            cross: false
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            cross: false
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            cross: false
+          # `ring` build failed
+          # - target: aarch64-pc-windows-msvc
+          #   os: windows-latest
+          #   cross: true
 
     env:
       NAME: see
@@ -31,13 +50,14 @@ jobs:
           components: rustfmt
           target: ${{ matrix.job.target }}
 
-      - name: Cargo cache
-        uses: actions/cache@v2
+      - name: Cargo cache 
+        uses: actions/cache@v3
         with:
           path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Cargo fmt
@@ -50,13 +70,13 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --release --target=${{ matrix.job.target }}
 
       - name: Cargo build
         uses: actions-rs/cargo@v1
         with:
           command: build
           args: --release --target=${{ matrix.job.target }}
+          use-cross: ${{ matrix.job.cross }}
 
       # -------------- GitHub Release --------------
 
@@ -65,13 +85,13 @@ jobs:
         run: |
           cd ./target/${{ matrix.job.target }}/release/
           zip ${{ env.NAME }}-${{ matrix.job.target }}.zip ${{ env.NAME }}
-
+      
       - name: Package zip (windows)
         if: startsWith(github.ref, 'refs/tags/') && matrix.job.os == 'windows-latest'
         run: |
           cd ./target/${{ matrix.job.target }}/release/
           Compress-Archive -CompressionLevel Optimal -Force -Path ${{ env.NAME }}.exe -DestinationPath ${{ env.NAME }}-${{ matrix.job.target }}.zip
-
+      
       - name: GitHub release
         uses: softprops/action-gh-release@v1
         if: startsWith(github.ref, 'refs/tags/')

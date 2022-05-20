@@ -16,7 +16,7 @@ codegen-units = 1
 strip = "symbols"
 
 [dependencies]
-async-compression = { version = "0.3.12", features = ["tokio", "gzip", "deflate", "brotli"] }
+async-compression = { version = "0.3.14", features = ["tokio", "gzip", "deflate", "brotli"] }
 base64 = "0.13.0"
 clap = { version = "2.33.3", default-features = false }
 dirs = "4.0.0"
@@ -31,4 +31,4 @@ regex = "1.5.5"
 time = "=0.2.22" # TODO
 tokio = { version = "1.18.2", features = ["rt-multi-thread", "macros", "io-std", "fs"] }
 tokio-rustls = "0.22.0"
-tokio-util = { version = "0.7.1", default-features = false, features = ["codec"] }
+tokio-util = { version = "0.7.2", default-features = false, features = ["codec"] }
