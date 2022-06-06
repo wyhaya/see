@@ -28,7 +28,7 @@ lazy_static = "1.4.0"
 mime_guess = "2.0.4"
 percent-encoding = "2.1.0"
 regex = "1.5.5"
-time = "=0.2.22" # TODO
+time = "=0.2.23" # TODO
 tokio = { version = "1.18.2", features = ["rt-multi-thread", "macros", "io-std", "fs"] }
 tokio-rustls = "0.22.0"
 tokio-util = { version = "0.7.2", default-features = false, features = ["codec"] }
