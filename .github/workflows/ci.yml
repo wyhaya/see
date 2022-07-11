@@ -12,29 +12,44 @@ jobs:
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
             cross: false
+            test: true
             publish: true
+
           - target: x86_64-unknown-linux-musl
             os: ubuntu-latest
             cross: true
+            test: false
+
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-latest
             cross: true
+            test: false
+
           - target: aarch64-unknown-linux-musl
             os: ubuntu-latest
             cross: true
+            test: false
+
           - target: x86_64-apple-darwin
             os: macos-latest
             cross: false
+            test: true
+
           - target: aarch64-apple-darwin
             os: macos-latest
             cross: false
+            test: false
+
           - target: x86_64-pc-windows-msvc
             os: windows-latest
             cross: false
-          # `ring` build failed
+            test: true
+
+          # TODO: ring build failed
           # - target: aarch64-pc-windows-msvc
           #   os: windows-latest
           #   cross: true
+          #   test: false
 
     env:
       NAME: see
@@ -68,14 +83,16 @@ jobs:
 
       - name: Cargo test
         uses: actions-rs/cargo@v1
+        if: matrix.job.test
         with:
           command: test
+          args: --target ${{ matrix.job.target }}
 
       - name: Cargo build
         uses: actions-rs/cargo@v1
         with:
           command: build
-          args: --release --target=${{ matrix.job.target }}
+          args: --release --target ${{ matrix.job.target }}
           use-cross: ${{ matrix.job.cross }}
 
       # -------------- GitHub Release --------------
