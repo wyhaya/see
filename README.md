@@ -1,6 +1,6 @@
 # see
 
-[![GitHub Workflow Status](https://img.shields.io/github/workflow/status/wyhaya/see/Build?style=flat-square)](https://github.com/wyhaya/see/actions)
+[![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/wyhaya/see/ci.yml?style=flat-square&branch=main)](https://github.com/wyhaya/see/actions)
 [![Crates.io](https://img.shields.io/crates/v/see.svg?style=flat-square)](https://crates.io/crates/see)
 [![LICENSE](https://img.shields.io/crates/l/see.svg?style=flat-square)](LICENSE)
 [![Document](https://img.shields.io/badge/config-document-success.svg?style=flat-square)](docs/)
