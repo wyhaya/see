@@ -32,3 +32,17 @@ time = "=0.2.22" # TODO
 tokio = { version = "1.18.4", features = ["rt-multi-thread", "macros", "io-std", "fs"] }
 tokio-rustls = "0.22.0"
 tokio-util = { version = "0.7.2", default-features = false, features = ["codec"] }
+
+[package.metadata.deb]
+extended-description = """\
+Simple and fast web server as a single executable with no extra dependencies required."""
+maintainer-scripts = "systemd/"
+systemd-units = { enable = false }
+depends = "$auto"
+section = "utility"
+priority = "optional"
+conf-files = ["/etc/see/server.conf"]
+assets = [
+    ["target/release/see", "usr/bin/see-server", "755"],
+    ["see-default.conf", "/etc/see/server.conf", "644"],
+]
