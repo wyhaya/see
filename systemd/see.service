@@ -1,0 +1,8 @@
+[Unit]
+Description=Simple satic resource web server 
+
+[Service]
+ExecStart=/usr/bin/see-server -c /etc/see/server.conf
+
+[Install]
+WantedBy=multi-user.target
