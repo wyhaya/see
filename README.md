@@ -5,6 +5,11 @@
 [![LICENSE](https://img.shields.io/crates/l/see.svg?style=flat-square)](LICENSE)
 [![Document](https://img.shields.io/badge/config-document-success.svg?style=flat-square)](docs/)
 
+> [!WARNING]  
+> * !!! This project contains severe bugs
+> * !!! No plans for fixes or patches
+> * !!! DO NOT use it in any environment
+
 ## Overview
 
 Simple and fast web server as a single executable with no extra dependencies
